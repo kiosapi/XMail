@@ -308,3 +308,34 @@ export async function isBlocked(db: D1Database, fromAddress: string, subject: st
   }
   return false;
 }
+
+// ---- Settings (key-value store) ----
+
+export async function getSetting(db: D1Database, key: string): Promise<string | null> {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export async function getSettings(db: D1Database, keys: string[]): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const key of keys) {
+    const val = await getSetting(db, key);
+    if (val !== null) result[key] = val;
+  }
+  return result;
+}
+
+export async function setSetting(db: D1Database, key: string, value: string): Promise<void> {
+  await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, value).run();
+}
+
+export async function getAllSettings(db: D1Database): Promise<Record<string, string>> {
+  const rows = await db.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>();
+  const result: Record<string, string> = {};
+  for (const row of rows.results) result[row.key] = row.value;
+  return result;
+}
+
+export async function deleteSetting(db: D1Database, key: string): Promise<void> {
+  await db.prepare('DELETE FROM settings WHERE key = ?').bind(key).run();
+}

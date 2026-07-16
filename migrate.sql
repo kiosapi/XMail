@@ -7,3 +7,8 @@ CREATE TABLE IF NOT EXISTS blocklist (
 );
 CREATE INDEX IF NOT EXISTS idx_blocklist_scope ON blocklist(scope);
 CREATE INDEX IF NOT EXISTS idx_blocklist_pattern ON blocklist(pattern);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);

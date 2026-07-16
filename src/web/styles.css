@@ -924,3 +924,302 @@ body {
   .message-detail-subject { font-size: 16px; }
   .inbox-item-avatar { width: 32px; height: 32px; font-size: 12px; }
 }
+
+/* ==================== Reading Pane v2 ==================== */
+.message-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.message-detail-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.message-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.message-detail-actions .topbar-menu-btn {
+  display: none;
+}
+
+.message-detail-subject {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--label);
+  line-height: 1.3;
+  margin-bottom: 16px;
+}
+
+.message-detail-sender {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sender-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.sender-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sender-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sender-email {
+  font-size: 13px;
+  color: var(--label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-date {
+  font-size: 12px;
+  color: var(--label-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.message-otp-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  margin: 0 24px;
+  background: linear-gradient(135deg, rgba(10,132,255,0.12), rgba(10,132,255,0.04));
+  border: 1px solid rgba(10,132,255,0.3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.message-otp-bar:hover {
+  background: linear-gradient(135deg, rgba(10,132,255,0.18), rgba(10,132,255,0.08));
+}
+
+.otp-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.otp-info { flex: 1; }
+
+.otp-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.otp-code {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--label);
+  letter-spacing: 4px;
+}
+
+.otp-copy-hint {
+  font-size: 11px;
+  color: var(--label-tertiary);
+}
+
+.message-attachments {
+  padding: 12px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachments-label {
+  width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--label-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--label-secondary);
+}
+
+.message-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+.message-body iframe {
+  width: 100%;
+  min-height: 300px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: #fff;
+  overflow: hidden;
+}
+
+body.light .message-body iframe {
+  background: #fff;
+}
+
+/* ==================== Admin Panel ==================== */
+.admin-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.admin-tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-tertiary);
+  border: none;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.admin-tab:hover { color: var(--label-secondary); }
+
+.admin-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.admin-section { display: none; }
+.admin-section.active { display: block; }
+
+.admin-field {
+  margin-bottom: 16px;
+}
+
+.admin-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--label-secondary);
+  margin-bottom: 6px;
+}
+
+.admin-field input,
+.admin-field textarea,
+.admin-field select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--label);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.admin-field input:focus,
+.admin-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.admin-field .hint {
+  font-size: 11px;
+  color: var(--label-tertiary);
+  margin-top: 4px;
+}
+
+.admin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.admin-status.ok {
+  background: rgba(48,209,88,0.12);
+  color: var(--green);
+}
+
+.admin-status.off {
+  background: rgba(92,92,102,0.12);
+  color: var(--label-tertiary);
+}
+
+.admin-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.admin-key-prompt {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.admin-key-prompt .icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  color: var(--label-tertiary);
+}
+
+@media (max-width: 768px) {
+  .message-detail-header { padding: 16px; }
+  .message-detail-subject { font-size: 18px; }
+  .message-body { padding: 0 16px 16px; }
+  .message-otp-bar { margin: 0 16px; }
+  .message-attachments { padding: 12px 16px; }
+}

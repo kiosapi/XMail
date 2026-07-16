@@ -46,6 +46,9 @@ const ICON = {
   qr: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21v.01M21 21v.01M17 21h4v-4"/></svg>',
   clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
   shieldOff: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14A6.9 6.9 0 0 0 19 11V8a7 7 0 0 0-14 0v3a6.9 6.9 0 0 0-.7 3"/><path d="M2 2l20 20"/><path d="M5 8a7 7 0 0 0 7 7"/></svg>',
+  admin: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>',
+  telegram: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>',
+  download: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
 };
 
 // ==================== API ====================
@@ -93,6 +96,13 @@ function formatSize(bytes) {
 
 function getInitial(addr) {
   return (addr || '?')[0].toUpperCase();
+}
+
+function avatarColor(str) {
+  const colors = ['#e57373', '#ba68c8', '#7986cb', '#4fc3f7', '#4db6ac', '#aed581', '#ffb74d', '#a1887f', '#90a4ae', '#f06292', '#64b5f6', '#81c784'];
+  let hash = 0;
+  for (let i = 0; i < (str || '').length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
 }
 
 function showToast(text) {
@@ -270,7 +280,7 @@ function render() {
   });
   html += '</div>';
   html += '</div>';
-  html += '<div class="sidebar-footer"><button class="sidebar-footer-btn" onclick="openStatsModal()" title="Stats">' + ICON.stats + '</button><button class="sidebar-footer-btn" onclick="openSettingsModal()" title="Inbox Settings">' + ICON.settings + '</button><button class="sidebar-footer-btn" onclick="toggleTheme()" title="Theme">' + (document.body.classList.contains('light') ? ICON.sun : ICON.moon) + '</button></div>';
+  html += '<div class="sidebar-footer"><button class="sidebar-footer-btn" onclick="openStatsModal()" title="Stats">' + ICON.stats + '</button><button class="sidebar-footer-btn" onclick="openSettingsModal()" title="Inbox Settings">' + ICON.settings + '</button><button class="sidebar-footer-btn" onclick="openAdminModal()" title="Admin Panel">' + ICON.admin + '</button><button class="sidebar-footer-btn" onclick="toggleTheme()" title="Theme">' + (document.body.classList.contains('light') ? ICON.sun : ICON.moon) + '</button></div>';
   html += '</div>';
 
   // Backdrop
@@ -342,36 +352,48 @@ function renderMessages() {
 function renderReadingPane(msg) {
   const pane = $('readingPane');
   if (!pane) return;
-  let html = '<div class="message-detail">';
-  html += '<div class="message-detail-header">';
-  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">';
+  const senderName = msg.from_name || msg.from_address;
+  const color = avatarColor(msg.from_address);
+  let html = '<div class="message-detail" style="border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden;height:100%;display:flex;flex-direction:column;">';
+  // Action bar
+  html += '<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg-elevated);flex-shrink:0;">';
   html += '<button class="topbar-menu-btn" onclick="closeReadingPaneMobile()" style="display:flex;">' + ICON.back + '</button>';
   html += '<div style="flex:1;"></div>';
-  html += '<button class="topbar-btn" onclick="toggleStar(\'' + msg.id + '\')" title="Star">' + (msg.is_starred ? ICON.starFilled : ICON.star) + '</button>';
-  html += '<button class="topbar-btn" onclick="downloadEml(\'' + msg.id + '\')" title="Download .eml">' + ICON.export + '</button>';
-  html += '<button class="topbar-btn" onclick="deleteMessage(\'' + msg.id + '\')" title="Delete" style="color:var(--red);">' + ICON.delete + '</button>';
+  html += '<button class="topbar-btn" onclick="toggleStar(\'' + msg.id + '\')" title="Star" style="color:' + (msg.is_starred ? 'var(--yellow,#f5a623)' : '') + ';">' + (msg.is_starred ? ICON.starFilled : ICON.star) + '</button>';
+  html += '<button class="topbar-btn" onclick="downloadEml(\'' + msg.id + '\')" title="Download .eml">' + ICON.download + '</button>';
+  html += '<button class="topbar-btn" onclick="deleteMessage(\'' + msg.id + '\')" title="Delete" style="color:var(--red,#ff3b30);">' + ICON.delete + '</button>';
   html += '</div>';
-  html += '<div class="message-detail-subject">' + escapeHtml(msg.subject) + '</div>';
-  html += '<div class="message-detail-sender">';
-  html += '<div class="sender-avatar">' + getInitial(msg.from_address) + '</div>';
-  html += '<div class="sender-info"><div class="sender-name">' + escapeHtml(msg.from_name || msg.from_address) + '</div><div class="sender-email">' + escapeHtml(msg.from_address) + '</div></div>';
-  html += '<div class="message-date">' + formatFullDate(msg.received_at) + '</div>';
-  html += '</div></div>';
+  // Scrollable content
+  html += '<div style="overflow-y:auto;flex:1;">';
+  // Subject
+  html += '<div style="padding:20px 24px 12px;"><div style="font-size:22px;font-weight:700;line-height:1.3;">' + escapeHtml(msg.subject) + '</div></div>';
+  // Sender row
+  html += '<div style="display:flex;align-items:center;gap:12px;padding:0 24px 16px;">';
+  html += '<div style="width:40px;height:40px;border-radius:50%;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0;">' + getInitial(senderName) + '</div>';
+  html += '<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:600;">' + escapeHtml(senderName) + '</div><div style="font-size:13px;color:var(--label-tertiary);">' + escapeHtml(msg.from_address) + '</div></div>';
+  html += '<div style="font-size:12px;color:var(--label-tertiary);text-align:right;white-space:nowrap;">' + formatFullDate(msg.received_at) + '</div>';
+  html += '</div>';
+  // OTP bar
   if (msg.otp_code) {
-    html += '<div class="message-otp-bar" onclick="navigator.clipboard.writeText(\'' + msg.otp_code + '\');showToast(\'OTP copied: ' + msg.otp_code + '\')">';
-    html += '<div class="otp-icon">' + ICON.shield + '</div>';
-    html += '<div class="otp-info"><div class="otp-label">Verification Code</div><div class="otp-code">' + msg.otp_code + '</div></div>';
-    html += '<div class="otp-copy-hint">Tap to copy</div></div>';
-  }
-  const atts = JSON.parse(msg.attachments || '[]');
-  if (atts.length > 0) {
-    html += '<div class="message-attachments"><div class="attachments-label">Attachments</div>';
-    atts.forEach(function(a) { html += '<div class="attachment-chip">' + ICON.paperclip + escapeHtml(a.filename) + ' (' + formatSize(a.size) + ')</div>'; });
+    html += '<div style="margin:0 24px 16px;padding:14px 16px;border-radius:10px;background:rgba(0,122,255,0.08);border:1px solid rgba(0,122,255,0.2);display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="navigator.clipboard.writeText(\'' + msg.otp_code + '\');showToast(\'OTP copied: ' + msg.otp_code + '\')">';
+    html += '<div style="color:var(--blue,#007aff);flex-shrink:0;">' + ICON.shield + '</div>';
+    html += '<div style="flex:1;"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--label-tertiary);">Verification Code</div><div style="font-size:24px;font-family:monospace;font-weight:700;letter-spacing:3px;color:var(--blue,#007aff);">' + msg.otp_code + '</div></div>';
+    html += '<div style="font-size:11px;color:var(--label-tertiary);display:flex;align-items:center;gap:4px;">' + ICON.copy + ' Tap to copy</div>';
     html += '</div>';
   }
-  const content = msg.body_html || '<pre style="white-space:pre-wrap;padding:24px;font-family:inherit;">' + escapeHtml(msg.body_text) + '</pre>';
-  html += '<div class="message-body"><iframe id="msgFrame" sandbox="allow-same-origin"></iframe></div>';
-  html += '</div>';
+  // Attachments
+  const atts = JSON.parse(msg.attachments || '[]');
+  if (atts.length > 0) {
+    html += '<div style="margin:0 24px 16px;"><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--label-tertiary);margin-bottom:8px;">Attachments</div><div style="display:flex;flex-wrap:wrap;gap:8px;">';
+    atts.forEach(function(a) {
+      html += '<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:var(--bg-elevated);border:1px solid var(--border);font-size:13px;">' + ICON.paperclip + escapeHtml(a.filename) + ' <span style="color:var(--label-tertiary);">' + formatSize(a.size) + '</span></div>';
+    });
+    html += '</div></div>';
+  }
+  // Body
+  const content = msg.body_html || '<pre style="white-space:pre-wrap;padding:24px;font-family:inherit;margin:0;">' + escapeHtml(msg.body_text) + '</pre>';
+  html += '<div style="margin:0 24px 24px;padding:20px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border);min-height:200px;"><iframe id="msgFrame" sandbox="allow-same-origin" style="width:100%;border:none;min-height:300px;"></iframe></div>';
+  html += '</div></div>';
   pane.innerHTML = html;
   const frame = $('msgFrame');
   if (frame) frame.srcdoc = content;
@@ -458,9 +480,16 @@ function openQRModal() {
   const qrUrl = '/api/inboxes/' + encodeURIComponent(selectedInbox) + '/qr?dark=' + (dark ? '1' : '0');
   showModal(
     '<div class="modal-header"><div class="modal-title">QR Code</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
-    '<div style="text-align:center;padding:8px 0;"><div style="display:inline-block;padding:16px;background:' + (dark ? '#fff' : '#000') + ';border-radius:16px;margin-bottom:16px;"><img src="' + qrUrl + '" alt="QR" style="display:block;width:220px;height:220px;"></div><div style="font-size:16px;font-weight:600;margin-bottom:4px;word-break:break-all;">' + escapeHtml(selectedInbox) + '</div><div style="font-size:13px;color:var(--label-tertiary);">Scan to copy address</div></div>',
+    '<div style="text-align:center;padding:8px 0;"><div id="qrContainer" style="display:inline-flex;align-items:center;justify-content:center;padding:16px;background:' + (dark ? '#fff' : '#000') + ';border-radius:16px;margin-bottom:16px;min-width:252px;min-height:252px;"><span style="color:#888;font-size:13px;">Loading...</span></div><div style="font-size:16px;font-weight:600;margin-bottom:4px;word-break:break-all;">' + escapeHtml(selectedInbox) + '</div><div style="font-size:13px;color:var(--label-tertiary);">Scan to copy address</div></div>',
     '<button class="btn btn-primary" onclick="navigator.clipboard.writeText(\'' + escapeAttr(selectedInbox) + '\');showToast(\'Address copied\')">' + ICON.copy + ' Copy Address</button>'
   );
+  fetch(qrUrl, { headers: { 'x-session-id': sessionId } }).then(function(r) { return r.text(); }).then(function(svg) {
+    const c = $('qrContainer');
+    if (c) c.innerHTML = svg;
+  }).catch(function() {
+    const c = $('qrContainer');
+    if (c) c.innerHTML = '<span style="color:#f00;font-size:13px;">Failed to load QR</span>';
+  });
 }
 
 function openTTLModal() {
@@ -534,6 +563,116 @@ function copyBulkResult() {
   showToast('Copied ' + t.value.split('\n').length + ' addresses');
 }
 
+// ==================== Admin Panel ====================
+async function openAdminModal() {
+  if (!adminKey) {
+    showModal(
+      '<div class="modal-header"><div class="modal-title">Admin Access</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
+      '<div class="form-group"><label>Admin Key</label><input id="adminKeyInput" type="password" placeholder="Enter admin API key" onkeydown="if(event.key===\'Enter\')setAdminKey()"></div><p style="font-size:12px;color:var(--label-tertiary);">Enter your admin key to access server settings.</p>',
+      '<button class="btn btn-primary" onclick="setAdminKey()">' + ICON.shield + ' Continue</button>'
+    );
+    return;
+  }
+  await loadAdminSettings();
+}
+
+function setAdminKey() {
+  const key = $('adminKeyInput').value.trim();
+  if (!key) { showToast('Key required'); return; }
+  adminKey = key;
+  localStorage.setItem(ADMIN_KEY_KEY, key);
+  closeModal();
+  openAdminModal();
+}
+
+async function loadAdminSettings() {
+  showModal(
+    '<div class="modal-header"><div class="modal-title">Admin Panel</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
+    '<div id="adminContent" style="min-height:200px;">Loading...</div>',
+    ''
+  );
+  try {
+    const res = await fetch('/api/admin/settings', { headers: { 'x-api-key': adminKey } });
+    if (!res.ok) throw new Error(await res.text());
+    const settings = await res.json();
+    renderAdminTabs(settings);
+  } catch(e) {
+    const c = $('adminContent');
+    if (c) c.innerHTML = '<div style="text-align:center;padding:24px;color:var(--red,#ff3b30);">Error: ' + escapeHtml(e.message) + '</div><div style="text-align:center;"><button class="btn btn-secondary" onclick="adminKey=\'\';localStorage.removeItem(\'' + ADMIN_KEY_KEY + '\');closeModal();openAdminModal();">Reset Key</button></div>';
+  }
+}
+
+function renderAdminTabs(settings) {
+  const s = settings || {};
+  const c = $('adminContent');
+  if (!c) return;
+  const tabStyle = 'padding:8px 16px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--label-secondary);';
+  const tabActive = 'padding:8px 16px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent);';
+  let html = '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;">';
+  html += '<button onclick="switchAdminTab(0)" id="atab0" style="' + tabActive + '">General</button>';
+  html += '<button onclick="switchAdminTab(1)" id="atab1" style="' + tabStyle + '">Security</button>';
+  html += '<button onclick="switchAdminTab(2)" id="atab2" style="' + tabStyle + '">' + ICON.telegram + ' Telegram</button>';
+  html += '<button onclick="switchAdminTab(3)" id="atab3" style="' + tabStyle + '">Webhooks</button>';
+  html += '</div>';
+  // General
+  html += '<div id="apanel0"><div class="form-group"><label>App Name</label><input id="adm_app_name" value="' + escapeAttr(s.app_name || '') + '"></div>';
+  html += '<div class="form-group"><label>Auto Expiry (hours)</label><input id="adm_auto_expiry_hours" type="number" value="' + escapeAttr(String(s.auto_expiry_hours || '')) + '"></div>';
+  html += '<div class="form-group"><label>Max Messages Per Inbox</label><input id="adm_max_messages_per_inbox" type="number" value="' + escapeAttr(String(s.max_messages_per_inbox || '')) + '"></div></div>';
+  // Security
+  html += '<div id="apanel1" style="display:none;"><div class="form-group"><label>API Keys (comma-separated)</label><textarea id="adm_api_keys" rows="3" style="font-family:monospace;font-size:12px;" placeholder="key1, key2">' + escapeHtml(Array.isArray(s.api_keys) ? s.api_keys.join(', ') : (s.api_keys || '')) + '</textarea></div>';
+  html += '<div class="form-group"><label>Admin Keys (comma-separated)</label><textarea id="adm_admin_keys" rows="3" style="font-family:monospace;font-size:12px;" placeholder="key1, key2">' + escapeHtml(Array.isArray(s.admin_keys) ? s.admin_keys.join(', ') : (s.admin_keys || '')) + '</textarea></div></div>';
+  // Telegram
+  html += '<div id="apanel2" style="display:none;"><div class="form-group"><label>Telegram Bot Token</label><input id="adm_tg_bot_token" value="' + escapeAttr(s.tg_bot_token || '') + '" placeholder="123456:ABC-DEF..."></div>';
+  html += '<button class="btn btn-secondary" onclick="setupTgWebhook()" style="margin-top:4px;">' + ICON.telegram + ' Setup Webhook</button>';
+  html += '<p style="font-size:12px;color:var(--label-tertiary);margin-top:8px;">Sets the Telegram webhook to receive incoming messages on this worker.</p></div>';
+  // Webhooks
+  html += '<div id="apanel3" style="display:none;"><div class="form-group"><label>Webhook Secret</label><input id="adm_webhook_secret" value="' + escapeAttr(s.webhook_secret || '') + '" placeholder="Secret for webhook verification"></div></div>';
+  // Save
+  html += '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);"><button class="btn btn-primary" onclick="saveAdminSettings()">' + ICON.save + ' Save Settings</button></div>';
+  c.innerHTML = html;
+}
+
+function switchAdminTab(idx) {
+  for (let i = 0; i < 4; i++) {
+    const p = $('apanel' + i);
+    const t = $('atab' + i);
+    if (p) p.style.display = i === idx ? '' : 'none';
+    if (t) { t.style.borderBottom = i === idx ? '2px solid var(--accent)' : '2px solid transparent'; t.style.color = i === idx ? 'var(--accent)' : 'var(--label-secondary)'; }
+  }
+}
+
+async function saveAdminSettings() {
+  const payload = {
+    app_name: $('adm_app_name') ? $('adm_app_name').value.trim() : '',
+    auto_expiry_hours: $('adm_auto_expiry_hours') ? parseInt($('adm_auto_expiry_hours').value) || 0 : 0,
+    max_messages_per_inbox: $('adm_max_messages_per_inbox') ? parseInt($('adm_max_messages_per_inbox').value) || 0 : 0,
+    api_keys: $('adm_api_keys') ? $('adm_api_keys').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+    admin_keys: $('adm_admin_keys') ? $('adm_admin_keys').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+    tg_bot_token: $('adm_tg_bot_token') ? $('adm_tg_bot_token').value.trim() : '',
+    webhook_secret: $('adm_webhook_secret') ? $('adm_webhook_secret').value.trim() : ''
+  };
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': adminKey },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showToast('Settings saved');
+    closeModal();
+    appConfig = await fetchJson('/api/config');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function setupTgWebhook() {
+  try {
+    const res = await fetch('/api/admin/tg/setup', { method: 'POST', headers: { 'x-api-key': adminKey } });
+    if (!res.ok) throw new Error(await res.text());
+    showToast('Telegram webhook setup complete');
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
 // ==================== Navigation ====================
 async function selectInbox(addr) {
   selectedInbox = addr;
@@ -598,6 +737,11 @@ window.closeReadingPaneMobile = closeReadingPaneMobile;
 window.loadMessages = loadMessages;
 window.openClaimModal = openClaimModal;
 window.downloadEml = downloadEml;
+window.openAdminModal = openAdminModal;
+window.setAdminKey = setAdminKey;
+window.switchAdminTab = switchAdminTab;
+window.saveAdminSettings = saveAdminSettings;
+window.setupTgWebhook = setupTgWebhook;
 
 // ==================== Keyboard Shortcuts (#6) ====================
 document.addEventListener('keydown', function(e) {

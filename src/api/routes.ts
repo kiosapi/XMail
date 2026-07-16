@@ -11,6 +11,7 @@ import {
   incrementStats, getStatsRange, getTotalCounts,
   deleteExpiredInboxes, pruneOldMessages,
   getBlocklist, addBlocklistEntry, removeBlocklistEntry,
+  getAllSettings, setSetting, deleteSetting,
 } from '../db/queries';
 import { generateUniqueAddress } from '../utils/random-address';
 
@@ -41,14 +42,17 @@ function requireSession(c: any): string {
   if (!sid) { c.status(400); return ''; }
   return sid;
 }
-function checkApiKey(c: any, env: ApiEnv): boolean {
-  const keys = getApiKeys(env);
-  if (keys.length === 0) return true;
+async function checkApiKey(c: any, env: ApiEnv): Promise<boolean> {
+  const dbSettings = await getAllSettings(env.DB).catch(() => ({} as Record<string, string>));
+  const keys = (dbSettings.api_keys || env.API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+  const adminKeys = (dbSettings.admin_keys || env.ADMIN_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+  if (keys.length === 0 && adminKeys.length === 0) return true;
   const provided = (c.req.header('x-api-key') || c.req.query('key') || '').trim();
-  return keys.includes(provided) || getAdminKeys(env).includes(provided);
+  return keys.includes(provided) || adminKeys.includes(provided);
 }
-function checkAdminKey(c: any, env: ApiEnv): boolean {
-  const adminKeys = getAdminKeys(env);
+async function checkAdminKey(c: any, env: ApiEnv): Promise<boolean> {
+  const dbSettings = await getAllSettings(env.DB).catch(() => ({} as Record<string, string>));
+  const adminKeys = (dbSettings.admin_keys || env.ADMIN_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
   if (adminKeys.length === 0) return checkApiKey(c, env);
   const provided = (c.req.header('x-api-key') || c.req.query('key') || '').trim();
   return adminKeys.includes(provided);
@@ -73,12 +77,25 @@ api.get('/config', async (c) => {
   const dbDomains = await getDomains(c.env.DB).catch(() => []);
   const envDomains = (c.env.MAIL_DOMAIN || '').split(',').map(d => d.trim()).filter(Boolean);
   const allDomains = [...new Set([...dbDomains.map(d => d.domain), ...envDomains])];
+  // Merge DB settings (override env)
+  const dbSettings = await getAllSettings(c.env.DB).catch(() => ({}));
+  const appName = dbSettings.app_name || c.env.APP_NAME || 'XMail';
+  const autoExpiry = dbSettings.auto_expiry_hours || c.env.AUTO_EXPIRY_HOURS || '24';
+  const maxMsgs = dbSettings.max_messages_per_inbox || c.env.MAX_MESSAGES_PER_INBOX || '100';
+  const apiKeys = (dbSettings.api_keys || c.env.API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+  const adminKeys = (dbSettings.admin_keys || c.env.ADMIN_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
   return c.json({
-    appName: c.env.APP_NAME || 'XMail',
+    appName,
     mailDomain: allDomains[0] || 'example.com',
     mailDomains: allDomains,
     webHost: c.env.WEB_HOST || '',
-    authRequired: getApiKeys(c.env).length > 0,
+    authRequired: apiKeys.length > 0,
+    autoExpiryHours: autoExpiry,
+    maxMessagesPerInbox: maxMsgs,
+    hasTgToken: !!(dbSettings.tg_bot_token || (globalThis as any).TG_BOT_TOKEN),
+    hasWebhookSecret: !!(dbSettings.webhook_secret || (globalThis as any).WEBHOOK_SECRET),
+    tgBotConfigured: !!(dbSettings.tg_bot_token),
+    tgWebhookUrl: dbSettings.tg_webhook_url || '',
   });
 });
 
@@ -102,7 +119,7 @@ api.get('/domains', async (c) => {
 
 // POST /domains (admin)
 api.post('/domains', async (c) => {
-  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
   const body = await c.req.json().catch(() => ({}));
   const domain = (body.domain || '').trim().toLowerCase();
   const label = (body.label || '').trim();
@@ -113,7 +130,7 @@ api.post('/domains', async (c) => {
 
 // DELETE /domains/:domain (admin)
 api.delete('/domains/:domain', async (c) => {
-  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
   const domain = decodeURIComponent(c.req.param('domain')).toLowerCase();
   await removeDomain(c.env.DB, domain);
   return c.json({ ok: true });
@@ -321,7 +338,7 @@ api.get('/export', async (c) => {
 // ==================== Stats ====================
 
 api.get('/stats', async (c) => {
-  if (!checkApiKey(c, c.env)) return jsonError(c, 401, 'Invalid or missing API key');
+  if (!(await checkApiKey(c, c.env))) return jsonError(c, 401, 'Invalid or missing API key');
   const days = parseInt(c.req.query('days') || '7', 10);
   const [daily, totals] = await Promise.all([getStatsRange(c.env.DB, days), getTotalCounts(c.env.DB)]);
   return c.json({ totals, daily });
@@ -330,7 +347,7 @@ api.get('/stats', async (c) => {
 // ==================== Search ====================
 
 api.get('/search', async (c) => {
-  if (!checkApiKey(c, c.env)) return jsonError(c, 401, 'Invalid or missing API key');
+  if (!(await checkApiKey(c, c.env))) return jsonError(c, 401, 'Invalid or missing API key');
   const sid = requireSession(c);
   if (!sid) return jsonError(c, 400, 'Missing x-session-id');
   const q = (c.req.query('q') || '').trim();
@@ -342,11 +359,71 @@ api.get('/search', async (c) => {
 // ==================== Admin ====================
 
 api.post('/admin/expire', async (c) => {
-  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
   const expired = await deleteExpiredInboxes(c.env.DB);
-  const maxPerInbox = parseInt(c.env.MAX_MESSAGES_PER_INBOX || '0', 10);
+  const dbSettings = await getAllSettings(c.env.DB).catch(() => ({} as Record<string, string>));
+  const maxPerInbox = parseInt(dbSettings.max_messages_per_inbox || c.env.MAX_MESSAGES_PER_INBOX || '0', 10);
   const pruned = await pruneOldMessages(c.env.DB, maxPerInbox);
   return c.json({ expired_inboxes: expired, pruned_messages: pruned });
+});
+
+// ==================== Admin Settings ====================
+// GET /admin/settings — get all settings
+api.get('/admin/settings', async (c) => {
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
+  const settings = await getAllSettings(c.env.DB);
+  // Also include env fallbacks for display
+  return c.json({
+    settings,
+    env: {
+      APP_NAME: c.env.APP_NAME || '',
+      MAIL_DOMAIN: c.env.MAIL_DOMAIN || '',
+      WEB_HOST: c.env.WEB_HOST || '',
+      AUTO_EXPIRY_HOURS: c.env.AUTO_EXPIRY_HOURS || '',
+      MAX_MESSAGES_PER_INBOX: c.env.MAX_MESSAGES_PER_INBOX || '',
+    }
+  });
+});
+
+// PUT /admin/settings — update settings
+api.put('/admin/settings', async (c) => {
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
+  const body = await c.req.json().catch(() => ({}));
+  const allowed = [
+    'app_name', 'auto_expiry_hours', 'max_messages_per_inbox',
+    'api_keys', 'admin_keys',
+    'tg_bot_token', 'tg_webhook_url',
+    'webhook_secret',
+  ];
+  for (const key of allowed) {
+    if (body[key] !== undefined) {
+      await setSetting(c.env.DB, key, String(body[key]));
+    }
+  }
+  // Delete keys set to empty string
+  for (const key of allowed) {
+    if (body[key] === '') {
+      await deleteSetting(c.env.DB, key);
+    }
+  }
+  return c.json({ ok: true });
+});
+
+// POST /admin/tg/setup — set Telegram webhook
+api.post('/admin/tg/setup', async (c) => {
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
+  const dbSettings = await getAllSettings(c.env.DB);
+  const token = dbSettings.tg_bot_token;
+  if (!token) return jsonError(c, 400, 'TG_BOT_TOKEN not set. Set it in Admin Panel first.');
+  const webhookUrl = `https://${c.env.WEB_HOST}/api/tg/webhook`;
+  const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: webhookUrl }),
+  });
+  const data = await res.json();
+  await setSetting(c.env.DB, 'tg_webhook_url', webhookUrl);
+  return c.json({ ok: data.ok, telegram_response: data, webhook_url: webhookUrl });
 });
 
 // GET /health
@@ -358,7 +435,7 @@ api.get('/health', (c) => {
 
 // GET /blocklist
 api.get('/blocklist', async (c) => {
-  if (!checkApiKey(c, c.env)) return jsonError(c, 401, 'Invalid or missing API key');
+  if (!(await checkApiKey(c, c.env))) return jsonError(c, 401, 'Invalid or missing API key');
   const scope = c.req.query('scope');
   const entries = await getBlocklist(c.env.DB, scope || undefined);
   return c.json(entries);
@@ -366,7 +443,7 @@ api.get('/blocklist', async (c) => {
 
 // POST /blocklist (admin)
 api.post('/blocklist', async (c) => {
-  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
   const body = await c.req.json().catch(() => ({}));
   const pattern = (body.pattern || '').trim();
   const matchType = (body.match_type || 'sender').trim();
@@ -379,7 +456,7 @@ api.post('/blocklist', async (c) => {
 
 // DELETE /blocklist/:id (admin)
 api.delete('/blocklist/:id', async (c) => {
-  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  if (!(await checkAdminKey(c, c.env))) return jsonError(c, 401, 'Admin key required');
   const id = parseInt(c.req.param('id'), 10);
   await removeBlocklistEntry(c.env.DB, id);
   return c.json({ ok: true });
@@ -389,7 +466,8 @@ api.delete('/blocklist/:id', async (c) => {
 // POST /tg/webhook — receives Telegram updates, responds with inbox info
 api.post('/tg/webhook', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const tgToken = (globalThis as any).TG_BOT_TOKEN;
+  const dbSettings = await getAllSettings(c.env.DB);
+  const tgToken = dbSettings.tg_bot_token || (globalThis as any).TG_BOT_TOKEN;
   if (!tgToken) return c.json({ error: 'TG_BOT_TOKEN not set' }, 500);
 
   const msg = body.message || body.edited_message;
@@ -475,10 +553,7 @@ api.post('/tg/webhook', async (c) => {
 // ==================== QR Code ====================
 // GET /inboxes/:address/qr — returns SVG QR code
 api.get('/inboxes/:address/qr', async (c) => {
-  const sid = requireSession(c);
-  if (!sid) return jsonError(c, 400, 'Missing x-session-id');
   const address = decodeURIComponent(c.req.param('address'));
-  if (!(await isInboxInSession(c.env.DB, sid, address))) return jsonError(c, 403, 'Inbox not in session');
 
   const qr = (await import('qrcode-generator')).default;
   const qr0 = qr(0, 'M');
@@ -511,7 +586,9 @@ api.get('/inboxes/:address/rss', async (c) => {
   const address = decodeURIComponent(c.req.param('address'));
   const apiKey = (c.req.header('x-api-key') || c.req.query('key') || '').trim();
   const keys = getApiKeys(c.env);
-  if (keys.length > 0 && !keys.includes(apiKey)) {
+  const dbSettingsRss = await getAllSettings(c.env.DB).catch(() => ({} as Record<string, string>));
+  const rssKeys = (dbSettingsRss.api_keys || c.env.API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+  if (rssKeys.length > 0 && !rssKeys.includes(apiKey)) {
     return jsonError(c, 401, 'API key required for RSS');
   }
   const messages = await getMessages(c.env.DB, address, 50);
