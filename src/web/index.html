@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XMail</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%2310b981'/%3E%3Cstop offset='100%25' style='stop-color:%23059669'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Ctext x='32' y='46' font-family='Inter,sans-serif' font-size='36' font-weight='700' fill='white' text-anchor='middle'%3EX%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div class="header-left">
+          <h1 id="appTitle">XMail</h1>
+          <p id="appSubtitle">Disposable inbox</p>
+        </div>
+        <div class="header-right">
+          <button id="themeToggle" class="icon-btn" title="Toggle theme">🌙</button>
+          <button id="statsBtn" class="icon-btn" title="Stats">📊</button>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <select id="inboxSelect"></select>
+        <button id="copyBtn">📋 Copy</button>
+        <button id="refreshBtn">🔄 Refresh</button>
+        <button id="newBtn">＋ New</button>
+        <button id="bulkBtn">📦 Bulk</button>
+        <button id="settingsBtn">⚙️ Settings</button>
+        <button id="deleteBtn" class="danger">🗑 Delete</button>
+      </section>
+
+      <section class="new-box hidden" id="newBox">
+        <input id="localPartInput" placeholder="username atau kosongkan untuk random" />
+        <select id="domainSelect"></select>
+        <button id="createCustomBtn">✦ Create</button>
+        <button id="createRandomBtn">🎲 Random</button>
+      </section>
+
+      <section class="bulk-box hidden" id="bulkBox">
+        <input id="bulkCount" type="number" value="5" min="1" max="100" />
+        <span>addresses</span>
+        <button id="bulkCreateBtn">📦 Create Bulk</button>
+        <button id="bulkExportBtn">📋 Export All</button>
+        <textarea id="bulkResult" class="hidden" readonly placeholder="Bulk addresses akan muncul di sini..."></textarea>
+      </section>
+
+      <section class="settings-box hidden" id="settingsBox">
+        <h3>Inbox Settings</h3>
+        <label>Webhook URL
+          <input id="webhookInput" placeholder="https://example.com/webhook" />
+        </label>
+        <label>Telegram Chat ID
+          <input id="telegramInput" placeholder="123456789" />
+        </label>
+        <button id="saveSettingsBtn">💾 Save Settings</button>
+        <p class="hint">Webhook dipanggil + Telegram dikirim setiap email masuk. TG_BOT_TOKEN di-set sebagai Worker secret.</p>
+      </section>
+
+      <section class="stats-box hidden" id="statsBox">
+        <h3>📊 Statistics</h3>
+        <div id="statsContent">Loading...</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 id="currentInbox">No inbox selected</h2>
+          <span id="messageCount">0 messages</span>
+        </div>
+        <div id="messageList" class="message-list"></div>
+      </section>
+
+      <footer>
+        <span>XMail v1.0 — Powered by Cloudflare Workers</span>
+      </footer>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Message detail modal -->
+    <div class="modal hidden" id="messageModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalSubject"></h3>
+          <button id="modalClose" class="icon-btn">✕</button>
+        </div>
+        <div class="modal-meta">
+          <span><b>From:</b> <span id="modalFrom"></span></span>
+          <span><b>Date:</b> <span id="modalDate"></span></span>
+          <span id="modalOtpBadge" class="otp-badge hidden"></span>
+        </div>
+        <div id="modalAttachments" class="modal-attachments hidden"></div>
+        <div class="modal-body">
+          <iframe id="modalFrame" sandbox="allow-same-origin"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

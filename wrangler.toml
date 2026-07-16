@@ -1,0 +1,43 @@
+name = "xmail"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Disable workers.dev — use custom domain
+workers_dev = false
+
+# ---- D1 Database ----
+[[d1_databases]]
+binding = "DB"
+database_name = "xmail-db"
+database_id = "c4b41c8b-2269-44bf-936d-0cc83ff937cd"
+
+# ---- Email Worker ----
+[email]
+action = "process"
+
+# ---- Cron Triggers (auto-expiry) ----
+[triggers]
+crons = ["0 * * * *"]
+
+# ---- Custom domain ----
+[[routes]]
+pattern = "mail.kilo.web.id"
+custom_domain = true
+
+# ---- Environment variables ----
+[vars]
+APP_NAME = "XMail"
+MAIL_DOMAIN = "kilo.web.id"
+WEB_HOST = "mail.kilo.web.id"
+# Comma-separated list of API keys. Leave empty to disable auth.
+# Set via: npx wrangler secret put API_KEYS
+AUTO_EXPIRY_HOURS = "24"
+MAX_MESSAGES_PER_INBOX = "100"
+
+# ---- Static assets ----
+[assets]
+directory = "./src/web"
+
+# ---- Observability ----
+[observability]
+enabled = true

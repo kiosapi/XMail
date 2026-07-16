@@ -1,0 +1,23 @@
+{
+  "name": "xmail",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "XMail — Enhanced disposable email service on Cloudflare Workers",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create xmail-db",
+    "db:migrate": "wrangler d1 execute xmail-db --remote --file=src/db/schema.sql",
+    "db:local": "wrangler d1 execute xmail-db --local --file=src/db/schema.sql",
+    "tail": "wrangler tail --format pretty"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "postal-mime": "^2.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250509.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.105.0"
+  }
+}
