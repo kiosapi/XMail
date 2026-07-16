@@ -391,10 +391,13 @@ function renderReadingPane(msg) {
     html += '</div></div>';
   }
   // Body
+  const isLight = document.body.classList.contains('light');
+  const eBg = isLight ? '#fff' : '#1a1a1a';
+  const eColor = isLight ? '#1a1a1a' : '#e0e0e0';
   const content = msg.body_html
-    ? '<base target="_blank"><body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;background:#fff;">' + msg.body_html + '</body>'
-    : '<body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;background:#fff;white-space:pre-wrap;">' + escapeHtml(msg.body_text) + '</body>';
-  html += '<div class="message-body"><iframe id="msgFrame" sandbox="allow-same-origin" style="width:100%;border:none;min-height:300px;border-radius:var(--radius-lg);background:#fff;"></iframe></div>';
+    ? '<base target="_blank"><body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:' + eColor + ';background:' + eBg + ';">' + msg.body_html + '</body>'
+    : '<body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:' + eColor + ';background:' + eBg + ';white-space:pre-wrap;">' + escapeHtml(msg.body_text) + '</body>';
+  html += '<div class="message-body"><iframe id="msgFrame" sandbox="allow-same-origin" style="width:100%;border:none;min-height:300px;border-radius:var(--radius-lg);background:' + eBg + ';"></iframe></div>';
   html += '</div></div>';
   pane.innerHTML = html;
   const frame = $('msgFrame');

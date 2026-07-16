@@ -1,5 +1,5 @@
 // XMail Service Worker — PWA offline shell caching
-const CACHE_NAME = 'xmail-v5';
+const CACHE_NAME = 'xmail-v6';
 const ASSETS = ['/', '/app.js', '/styles.css', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
