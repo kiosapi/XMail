@@ -2,7 +2,7 @@ import PostalMime from 'postal-mime';
 import type { D1Database } from '@cloudflare/workers-types';
 import {
   createInbox, inboxExists, insertMessage, touchInboxEmailTime,
-  getInboxSettings, markForwarded, incrementStats,
+  getInboxSettings, markForwarded, incrementStats, isBlocked,
 } from './db/queries';
 import { extractOTP } from './utils/otp';
 
@@ -34,6 +34,13 @@ export async function handleEmail(message: ForwardableEmailMessage, env: EmailHa
     const bodyText = parsed.text?.trim() || '';
     const bodyHtml = parsed.html || '';
     const fromName = parsed.from?.name || '';
+
+    // Spam filter — check blocklist before processing
+    const blocked = await isBlocked(db, from, subject, to);
+    if (blocked) {
+      console.log(`[xmail] Blocked email from=${from} to=${to} (matched blocklist)`);
+      return;
+    }
 
     const otpCode = extractOTP(subject, bodyText);
 

@@ -81,6 +81,13 @@ export async function createInbox(db: D1Database, address: string, label = '', e
   await db.prepare('INSERT OR IGNORE INTO inboxes (address, label, expires_at) VALUES (?, ?, ?)').bind(address, label, expiresAt).run();
 }
 
+export async function updateInboxExpiry(db: D1Database, address: string, expiryHours: number): Promise<void> {
+  const expiresAt = expiryHours > 0
+    ? new Date(Date.now() + expiryHours * 3600_000).toISOString().replace('T', ' ').slice(0, 19)
+    : null;
+  await db.prepare('UPDATE inboxes SET expires_at = ? WHERE address = ?').bind(expiresAt, address).run();
+}
+
 export async function inboxExists(db: D1Database, address: string): Promise<boolean> {
   const row = await db.prepare('SELECT 1 FROM inboxes WHERE address = ? LIMIT 1').bind(address).first();
   return !!row;
@@ -250,4 +257,54 @@ export async function pruneOldMessages(db: D1Database, maxPerInbox: number): Pro
      )`
   ).bind(maxPerInbox).run();
   return result.meta?.changes ?? 0;
+}
+
+// ---- Blocklist (spam filter) ----
+
+export interface BlocklistEntry {
+  id: number;
+  pattern: string;
+  match_type: string; // 'sender' | 'subject' | 'domain'
+  scope: string;      // 'global' | inbox address
+  created_at: string;
+}
+
+export async function getBlocklist(db: D1Database, scope?: string): Promise<BlocklistEntry[]> {
+  if (scope) {
+    return db.prepare('SELECT * FROM blocklist WHERE scope = ? OR scope = ? ORDER BY created_at DESC').bind(scope, 'global').all<BlocklistEntry>().then(r => r.results);
+  }
+  return db.prepare('SELECT * FROM blocklist ORDER BY created_at DESC').all<BlocklistEntry>().then(r => r.results);
+}
+
+export async function addBlocklistEntry(db: D1Database, pattern: string, matchType: string, scope: string): Promise<void> {
+  await db.prepare('INSERT INTO blocklist (pattern, match_type, scope) VALUES (?, ?, ?)').bind(pattern.toLowerCase(), matchType, scope).run();
+}
+
+export async function removeBlocklistEntry(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM blocklist WHERE id = ?').bind(id).run();
+}
+
+export async function isBlocked(db: D1Database, fromAddress: string, subject: string, inboxAddress: string): Promise<boolean> {
+  const entries = await db.prepare('SELECT * FROM blocklist WHERE scope = ? OR scope = ?').bind('global', inboxAddress).all<BlocklistEntry>().then(r => r.results);
+  const from = fromAddress.toLowerCase();
+  const subj = subject.toLowerCase();
+  const fromDomain = from.split('@')[1] || '';
+
+  for (const entry of entries) {
+    const pat = entry.pattern.toLowerCase();
+    if (entry.match_type === 'sender') {
+      // Wildcard match: *@domain.com, user@*, exact, partial
+      if (pat.includes('*')) {
+        const regex = new RegExp('^' + pat.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+        if (regex.test(from)) return true;
+      } else {
+        if (from.includes(pat)) return true;
+      }
+    } else if (entry.match_type === 'domain') {
+      if (fromDomain === pat || fromDomain.endsWith('.' + pat)) return true;
+    } else if (entry.match_type === 'subject') {
+      if (subj.includes(pat)) return true;
+    }
+  }
+  return false;
 }

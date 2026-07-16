@@ -3,13 +3,14 @@ import { cors } from 'hono/cors';
 import type { D1Database } from '@cloudflare/workers-types';
 import {
   getDomains, getAllDomains, addDomain, removeDomain, domainExists,
-  getInbox, createInbox, inboxExists, deleteInbox, getSessionInboxes,
+  getInbox, createInbox, updateInboxExpiry, inboxExists, deleteInbox, getSessionInboxes,
   getMessages, getMessage, insertMessage, deleteMessage,
   markMessageRead, toggleMessageStar, markForwarded, searchMessages,
   ensureSession, linkInboxToSession, unlinkInboxFromSession, isInboxInSession,
   updateInboxLabel, getInboxSettings, setInboxSettings,
   incrementStats, getStatsRange, getTotalCounts,
   deleteExpiredInboxes, pruneOldMessages,
+  getBlocklist, addBlocklistEntry, removeBlocklistEntry,
 } from '../db/queries';
 import { generateUniqueAddress } from '../utils/random-address';
 
@@ -199,6 +200,18 @@ api.delete('/inboxes/:address', async (c) => {
   return c.json({ ok: true });
 });
 
+// PUT /inboxes/:address/ttl — set custom expiry
+api.put('/inboxes/:address/ttl', async (c) => {
+  const sid = requireSession(c);
+  if (!sid) return jsonError(c, 400, 'Missing x-session-id');
+  const address = decodeURIComponent(c.req.param('address'));
+  if (!(await isInboxInSession(c.env.DB, sid, address))) return jsonError(c, 403, 'Inbox not in session');
+  const body = await c.req.json().catch(() => ({}));
+  const hours = parseInt(body.hours || '0', 10);
+  await updateInboxExpiry(c.env.DB, address, hours);
+  return c.json({ ok: true, expires_in_hours: hours });
+});
+
 // PUT /inboxes/:address/label
 api.put('/inboxes/:address/label', async (c) => {
   const sid = requireSession(c);
@@ -339,6 +352,157 @@ api.post('/admin/expire', async (c) => {
 // GET /health
 api.get('/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ==================== Blocklist ====================
+
+// GET /blocklist
+api.get('/blocklist', async (c) => {
+  if (!checkApiKey(c, c.env)) return jsonError(c, 401, 'Invalid or missing API key');
+  const scope = c.req.query('scope');
+  const entries = await getBlocklist(c.env.DB, scope || undefined);
+  return c.json(entries);
+});
+
+// POST /blocklist (admin)
+api.post('/blocklist', async (c) => {
+  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  const body = await c.req.json().catch(() => ({}));
+  const pattern = (body.pattern || '').trim();
+  const matchType = (body.match_type || 'sender').trim();
+  const scope = (body.scope || 'global').trim();
+  if (!pattern) return jsonError(c, 400, 'Pattern required');
+  if (!['sender', 'subject', 'domain'].includes(matchType)) return jsonError(c, 400, 'Invalid match_type');
+  await addBlocklistEntry(c.env.DB, pattern, matchType, scope);
+  return c.json({ ok: true }, 201);
+});
+
+// DELETE /blocklist/:id (admin)
+api.delete('/blocklist/:id', async (c) => {
+  if (!checkAdminKey(c, c.env)) return jsonError(c, 401, 'Admin key required');
+  const id = parseInt(c.req.param('id'), 10);
+  await removeBlocklistEntry(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+// ==================== Telegram Bot Webhook ====================
+// POST /tg/webhook — receives Telegram updates, responds with inbox info
+api.post('/tg/webhook', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const tgToken = (globalThis as any).TG_BOT_TOKEN;
+  if (!tgToken) return c.json({ error: 'TG_BOT_TOKEN not set' }, 500);
+
+  const msg = body.message || body.edited_message;
+  if (!msg || !msg.text) return c.json({ ok: true });
+
+  const chatId = msg.chat.id;
+  const text = msg.text.trim();
+  const tgAdminKey = (globalThis as any).TG_ADMIN_KEY || '';
+  // Optional: verify secret in URL path or require TG_ADMIN_KEY
+  const adminKeys = getAdminKeys(c.env);
+  if (adminKeys.length > 0 && !adminKeys.includes(tgAdminKey)) {
+    // If admin keys configured but TG_ADMIN_KEY not set, still allow (backwards compat)
+  }
+
+  const db = c.env.DB;
+
+  // Parse commands
+  let responseText = '';
+
+  if (text === '/start' || text === '/help') {
+    responseText = 'XMail Bot — Commands:\n\n' +
+      '/inbox <address> — Latest messages\n' +
+      '/otp <address> — Latest OTP code\n' +
+      '/domains — List active domains\n' +
+      '/create [domain] — Create random inbox\n' +
+      '/stats — Show statistics\n' +
+      '/help — Show this help';
+  } else if (text.startsWith('/inbox ')) {
+    const addr = text.slice(8).trim().toLowerCase();
+    const msgs = await getMessages(db, addr, 5);
+    if (msgs.length === 0) {
+      responseText = 'No messages for ' + addr;
+    } else {
+      responseText = 'Inbox: ' + addr + '\n\n' + msgs.map(m =>
+        'From: ' + (m.from_name || m.from_address) + '\n' +
+        'Subject: ' + m.subject + '\n' +
+        (m.otp_code ? 'OTP: ' + m.otp_code + '\n' : '') +
+        'Date: ' + m.received_at
+      ).join('\n\n---\n\n');
+    }
+  } else if (text.startsWith('/otp ')) {
+    const addr = text.slice(5).trim().toLowerCase();
+    const msgs = await getMessages(db, addr, 10);
+    let otp = null;
+    for (const m of msgs) { if (m.otp_code) { otp = m; break; } }
+    if (otp) {
+      responseText = 'OTP for ' + addr + ':\n\nCode: ' + otp.otp_code + '\nFrom: ' + otp.from_address + '\nSubject: ' + otp.subject + '\nReceived: ' + otp.received_at;
+    } else {
+      responseText = 'No OTP found for ' + addr;
+    }
+  } else if (text === '/domains') {
+    const dbDomains = await getDomains(db).catch(() => []);
+    const envDomains = (c.env.MAIL_DOMAIN || '').split(',').map(d => d.trim()).filter(Boolean);
+    const all = [...new Set([...dbDomains.map(d => d.domain), ...envDomains])];
+    responseText = 'Active domains:\n\n' + all.map(d => '• ' + d).join('\n');
+  } else if (text.startsWith('/create') || text === '/create') {
+    const dbDomains = await getDomains(db).catch(() => []);
+    const envDomains = (c.env.MAIL_DOMAIN || '').split(',').map(d => d.trim()).filter(Boolean);
+    const all = [...new Set([...dbDomains.map(d => d.domain), ...envDomains])];
+    const argDomain = text.slice(8).trim().toLowerCase();
+    const domain = argDomain && all.includes(argDomain) ? argDomain : all[0];
+    const address = await generateUniqueAddress(addr => inboxExists(db, addr), domain);
+    const expiryHours = parseInt(c.env.AUTO_EXPIRY_HOURS || '0', 10);
+    await createInbox(db, address, '', expiryHours);
+    responseText = 'New inbox created:\n\n' + address + '\n\nExpires in ' + (expiryHours || '∞') + ' hours';
+  } else if (text === '/stats') {
+    const totals = await getTotalCounts(db);
+    responseText = 'XMail Stats:\n\nTotal Inboxes: ' + totals.inboxes + '\nTotal Emails: ' + totals.messages;
+  } else {
+    responseText = 'Unknown command. Send /help for available commands.';
+  }
+
+  // Send response via Telegram API
+  await fetch('https://api.telegram.org/bot' + tgToken + '/sendMessage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: responseText, parse_mode: 'HTML' }),
+  });
+
+  return c.json({ ok: true });
+});
+
+// ==================== QR Code ====================
+// GET /inboxes/:address/qr — returns SVG QR code
+api.get('/inboxes/:address/qr', async (c) => {
+  const sid = requireSession(c);
+  if (!sid) return jsonError(c, 400, 'Missing x-session-id');
+  const address = decodeURIComponent(c.req.param('address'));
+  if (!(await isInboxInSession(c.env.DB, sid, address))) return jsonError(c, 403, 'Inbox not in session');
+
+  const qr = (await import('qrcode-generator')).default;
+  const qr0 = qr(0, 'M');
+  qr0.addData(address);
+  qr0.make();
+
+  const size = qr0.getModuleCount();
+  const cellSize = 8;
+  const margin = 2;
+  const total = (size + margin * 2) * cellSize;
+  const fg = c.req.query('dark') === '0' ? '#ffffff' : '#000000';
+  const bg = c.req.query('dark') === '0' ? '#000000' : '#ffffff';
+
+  let rects = '';
+  for (let r = 0; r < size; r++) {
+    for (let c2 = 0; c2 < size; c2++) {
+      if (qr0.isDark(r, c2)) {
+        rects += `<rect x="${(c2 + margin) * cellSize}" y="${(r + margin) * cellSize}" width="${cellSize}" height="${cellSize}" fill="${fg}"/>`;
+      }
+    }
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="${total}" viewBox="0 0 ${total} ${total}"><rect width="${total}" height="${total}" fill="${bg}"/>${rects}</svg>`;
+  return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600' } });
 });
 
 export default api;

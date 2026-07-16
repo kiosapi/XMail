@@ -1,8 +1,8 @@
--- XMail D1 Schema v2
+-- XMail D1 Schema v3
 -- Run: wrangler d1 execute xmail-db --remote --file=src/db/schema.sql
 
 -- ============================================================
--- Domains (configurable mail domains)
+-- Domains
 -- ============================================================
 CREATE TABLE IF NOT EXISTS domains (
   domain      TEXT PRIMARY KEY,
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS session_inboxes (
 CREATE INDEX IF NOT EXISTS idx_session_inboxes_session ON session_inboxes(session_id);
 
 -- ============================================================
--- Stats (lightweight analytics)
+-- Stats
 -- ============================================================
 CREATE TABLE IF NOT EXISTS stats (
   date        TEXT NOT NULL,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS stats (
 );
 
 -- ============================================================
--- Settings (per-inbox config: webhook, telegram, forwarding)
+-- Settings (per-inbox: webhook, telegram, forwarding)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS inbox_settings (
   inbox_address TEXT NOT NULL,
@@ -88,3 +88,17 @@ CREATE TABLE IF NOT EXISTS inbox_settings (
   PRIMARY KEY (inbox_address),
   FOREIGN KEY (inbox_address) REFERENCES inboxes(address) ON DELETE CASCADE
 );
+
+-- ============================================================
+-- Blocklist (spam filter — global + per-inbox)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS blocklist (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern     TEXT NOT NULL,
+  match_type  TEXT NOT NULL DEFAULT 'sender',  -- 'sender' | 'subject' | 'domain'
+  scope       TEXT NOT NULL DEFAULT 'global',   -- 'global' | inbox address
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocklist_scope ON blocklist(scope);
+CREATE INDEX IF NOT EXISTS idx_blocklist_pattern ON blocklist(pattern);

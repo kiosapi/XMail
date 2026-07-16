@@ -1,0 +1,24 @@
+{
+  "name": "XMail — Disposable Email",
+  "short_name": "XMail",
+  "description": "Enhanced disposable email service with multi-domain support",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0e",
+  "theme_color": "#0b0b0e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230b0b0e'/%3E%3Crect x='96' y='144' width='320' height='224' rx='32' fill='none' stroke='%230a84ff' stroke-width='24'/%3E%3Cpath d='M96 176 256 288 416 176' fill='none' stroke='%230a84ff' stroke-width='24' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230b0b0e'/%3E%3Crect x='96' y='144' width='320' height='224' rx='32' fill='none' stroke='%230a84ff' stroke-width='24'/%3E%3Cpath d='M96 176 256 288 416 176' fill='none' stroke='%230a84ff' stroke-width='24' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

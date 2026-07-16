@@ -43,6 +43,9 @@ const ICON = {
   forward: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>',
   label: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
   health: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+  qr: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21v.01M21 21v.01M17 21h4v-4"/></svg>',
+  clock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  shieldOff: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.7 14A6.9 6.9 0 0 0 19 11V8a7 7 0 0 0-14 0v3a6.9 6.9 0 0 0-.7 3"/><path d="M2 2l20 20"/><path d="M5 8a7 7 0 0 0 7 7"/></svg>',
 };
 
 // ==================== API ====================
@@ -257,6 +260,7 @@ function render() {
   html += '<div class="sidebar-item" onclick="openBulkModal()">' + ICON.bulk + '<span>Bulk Create</span></div>';
   html += '<div class="sidebar-item" onclick="exportInboxes()">' + ICON.export + '<span>Export All</span></div>';
   html += '<div class="sidebar-item" onclick="openDomainsModal()">' + ICON.globe + '<span>Domains</span></div>';
+  html += '<div class="sidebar-item" onclick="openBlocklistModal()">' + ICON.shieldOff + '<span>Blocklist</span></div>';
   html += '</div>';
   html += '<div class="sidebar-section"><div class="sidebar-section-label">Inboxes (' + inboxes.length + ')</div>';
   inboxes.forEach(function(ib) {
@@ -278,6 +282,8 @@ function render() {
   html += '<div class="topbar-actions"><button class="topbar-btn" onclick="loadMessages()" title="Refresh">' + ICON.refresh + '</button>';
   if (selectedInbox) {
     html += '<button class="topbar-btn" onclick="openLabelModal()" title="Label">' + ICON.label + '</button>';
+    html += '<button class="topbar-btn" onclick="openTTLModal()" title="Set TTL">' + ICON.clock + '</button>';
+    html += '<button class="topbar-btn" onclick="openQRModal()" title="QR Code">' + ICON.qr + '</button>';
     html += '<button class="topbar-btn" onclick="deleteInbox(\'' + escapeAttr(selectedInbox) + '\')" title="Delete Inbox">' + ICON.delete + '</button>';
   }
   html += '</div></div>';
@@ -444,6 +450,81 @@ async function openStatsModal() {
   if (c) c.innerHTML = html;
 }
 
+function openQRModal() {
+  if (!selectedInbox) { showToast('Select an inbox first'); return; }
+  const dark = !document.body.classList.contains('light');
+  const qrUrl = '/api/inboxes/' + encodeURIComponent(selectedInbox) + '/qr?dark=' + (dark ? '1' : '0');
+  showModal(
+    '<div class="modal-header"><div class="modal-title">QR Code</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
+    '<div style="text-align:center;padding:8px 0;"><div style="display:inline-block;padding:16px;background:' + (dark ? '#fff' : '#000') + ';border-radius:16px;margin-bottom:16px;"><img src="' + qrUrl + '" alt="QR" style="display:block;width:220px;height:220px;"></div><div style="font-size:16px;font-weight:600;margin-bottom:4px;word-break:break-all;">' + escapeHtml(selectedInbox) + '</div><div style="font-size:13px;color:var(--label-tertiary);">Scan to copy address</div></div>',
+    '<button class="btn btn-primary" onclick="navigator.clipboard.writeText(\'' + escapeAttr(selectedInbox) + '\');showToast(\'Address copied\')">' + ICON.copy + ' Copy Address</button>'
+  );
+}
+
+function openTTLModal() {
+  if (!selectedInbox) return;
+  const ib = inboxes.find(function(i) { return i.address === selectedInbox; });
+  let currentTTL = '24';
+  if (ib && ib.expires_at) {
+    const diff = (new Date(ib.expires_at.replace(' ', 'T')) - new Date()) / 3600000;
+    currentTTL = Math.max(1, Math.round(diff)).toString();
+  }
+  showModal(
+    '<div class="modal-header"><div class="modal-title">Set Expiry (TTL)</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
+    '<div class="form-group"><label>Expiry (hours)</label><input id="ttlInput" type="number" value="' + currentTTL + '" min="1" max="720"></div><p style="font-size:12px;color:var(--label-tertiary);">0 = never expire. Max 720 hours (30 days). Inbox auto-deletes after this time.</p>',
+    '<button class="btn btn-primary" onclick="saveTTL()">' + ICON.clock + ' Set TTL</button>'
+  );
+}
+
+async function saveTTL() {
+  const hours = parseInt($('ttlInput').value) || 0;
+  await fetchJson('/api/inboxes/' + encodeURIComponent(selectedInbox) + '/ttl', { method: 'PUT', body: JSON.stringify({ hours }) });
+  closeModal();
+  showToast('TTL set to ' + (hours || 'never') + ' hours');
+  await loadInboxes();
+  render();
+}
+
+async function openBlocklistModal() {
+  showModal('<div class="modal-header"><div class="modal-title">Blocklist (Spam Filter)</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>', '<div id="blocklistContent">Loading...</div>', '');
+  try {
+    const entries = await fetchJson('/api/blocklist');
+    let listHtml = '';
+    if (entries.length === 0) {
+      listHtml = '<div style="text-align:center;padding:24px;color:var(--label-tertiary);">No blocklist entries</div>';
+    } else {
+      listHtml = entries.map(function(e) {
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--bg-elevated);margin-bottom:6px;"><div><div style="font-size:14px;font-weight:500;">' + escapeHtml(e.pattern) + '</div><div style="font-size:11px;color:var(--label-tertiary);">' + escapeHtml(e.match_type) + ' / ' + escapeHtml(e.scope) + '</div></div><button class="topbar-btn" onclick="removeBlocklist(' + e.id + ')" title="Remove" style="width:28px;height:28px;color:var(--red);">' + ICON.close + '</button></div>';
+      }).join('');
+    }
+    const c = $('blocklistContent');
+    if (c) c.innerHTML = listHtml + '<div class="form-group" style="margin-top:16px;"><label>Pattern</label><input id="blPattern" placeholder="*@spam.com or keyword"></div><div class="form-row"><div class="form-group"><label>Match Type</label><select id="blType"><option value="sender">Sender (email)</option><option value="domain">Domain</option><option value="subject">Subject contains</option></select></div><div class="form-group"><label>Scope</label><select id="blScope"><option value="global">Global (all inboxes)</option>' + (selectedInbox ? '<option value="' + escapeAttr(selectedInbox) + '">This inbox only</option>' : '') + '</select></div></div><button class="btn btn-primary" onclick="addBlocklist()" style="width:100%;">' + ICON.shieldOff + ' Add Block Rule</button>';
+  } catch(e) {
+    const c = $('blocklistContent');
+    if (c) c.innerHTML = '<div style="text-align:center;padding:24px;color:var(--label-tertiary);">API key required to view blocklist</div>';
+  }
+}
+
+async function addBlocklist() {
+  const pattern = $('blPattern').value.trim();
+  const matchType = $('blType').value;
+  const scope = $('blScope').value;
+  if (!pattern) { showToast('Pattern required'); return; }
+  try {
+    await fetchJson('/api/blocklist', { method: 'POST', body: JSON.stringify({ pattern, match_type: matchType, scope }) });
+    showToast('Block rule added');
+    openBlocklistModal();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function removeBlocklist(id) {
+  try {
+    await fetchJson('/api/blocklist/' + id, { method: 'DELETE' });
+    showToast('Block rule removed');
+    openBlocklistModal();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
 function copyBulkResult() {
   const t = $('bulkResult');
   if (!t || !t.value) { showToast('No addresses to export'); return; }
@@ -497,6 +578,12 @@ window.openSettingsModal = openSettingsModal;
 window.openLabelModal = openLabelModal;
 window.openDomainsModal = openDomainsModal;
 window.openStatsModal = openStatsModal;
+window.openQRModal = openQRModal;
+window.openTTLModal = openTTLModal;
+window.saveTTL = saveTTL;
+window.openBlocklistModal = openBlocklistModal;
+window.addBlocklist = addBlocklist;
+window.removeBlocklist = removeBlocklist;
 window.closeModal = closeModal;
 window.copyBulkResult = copyBulkResult;
 window.selectInbox = selectInbox;
