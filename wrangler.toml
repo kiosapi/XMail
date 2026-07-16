@@ -2,7 +2,6 @@ name = "xmail"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
 
-# Disable workers.dev — use custom domain
 workers_dev = false
 
 # ---- D1 Database ----
@@ -27,12 +26,15 @@ custom_domain = true
 # ---- Environment variables ----
 [vars]
 APP_NAME = "XMail"
-MAIL_DOMAIN = "kilo.web.id"
+# Comma-separated list of mail domains (also configurable via /api/domains)
+MAIL_DOMAIN = "kilo.web.id,asuw.fun"
 WEB_HOST = "mail.kilo.web.id"
-# Comma-separated list of API keys. Leave empty to disable auth.
-# Set via: npx wrangler secret put API_KEYS
 AUTO_EXPIRY_HOURS = "24"
 MAX_MESSAGES_PER_INBOX = "100"
+# Secrets (set via wrangler secret put):
+# API_KEYS  — comma-separated, empty = auth disabled
+# ADMIN_KEYS — comma-separated, for domain management
+# TG_BOT_TOKEN — Telegram bot token
 
 # ---- Static assets ----
 [assets]
