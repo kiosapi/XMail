@@ -12,6 +12,16 @@ const SESSION_KEY = 'xmail_session_id';
 let sessionId = localStorage.getItem(SESSION_KEY) || '';
 let currentApiKey = localStorage.getItem('xmail_api_key') || '';
 
+// ---- SVG icon strings (no emoji) ----
+const ICON = {
+  inbox: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m2 7 10 6 10-6"/></svg>',
+  mail: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m2 7 10 6 10-6"/></svg>',
+  warning: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  copy: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  paperclip: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+};
+
 // ---- API helpers ----
 
 async function fetchJson(url, options = {}) {
@@ -19,10 +29,8 @@ async function fetchJson(url, options = {}) {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
-
   if (sessionId) headers['x-session-id'] = sessionId;
   if (currentApiKey) headers['x-api-key'] = currentApiKey;
-
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -33,9 +41,8 @@ async function fetchJson(url, options = {}) {
 async function loadConfig() {
   appConfig = await fetchJson('/api/config', { headers: {} });
   document.title = appConfig.appName;
-  $('appTitle').textContent = appConfig.appName;
   $('appSubtitle').textContent = `Disposable inbox for ${appConfig.mailDomain}`;
-  $('localPartInput').placeholder = `username atau kosongkan untuk random @${appConfig.mailDomain}`;
+  $('localPartInput').placeholder = `Custom or leave blank @${appConfig.mailDomain}`;
 
   const domains = appConfig.mailDomains || [appConfig.mailDomain];
   $('domainSelect').innerHTML = '';
@@ -65,12 +72,10 @@ async function loadInboxes(selectedAddress) {
   if (!inboxes.length) {
     const opt = document.createElement('option');
     opt.value = '';
-    opt.textContent = 'Belum ada inbox';
+    opt.textContent = 'No inbox';
     $('inboxSelect').appendChild(opt);
-    $('currentInbox').textContent = 'No inbox selected';
-    $('messageList').innerHTML =
-      '<div class="empty-state"><div class="icon">📬</div><div class="title">No inboxes yet</div><div class="sub">Click <b>New</b> to create a disposable email address.</div></div>';
     $('messageCount').textContent = '0 messages';
+    $('messageList').innerHTML = `<div class="empty-state"><div class="empty-icon">${ICON.inbox}</div><div class="title">No Inboxes</div><div class="sub">Tap New to create a disposable address.</div></div>`;
     return;
   }
 
@@ -92,44 +97,50 @@ async function loadInboxes(selectedAddress) {
 async function loadMessages() {
   const address = $('inboxSelect').value;
   if (!address) return;
-  $('currentInbox').textContent = address;
   const messages = await fetchJson(`/api/inboxes/${encodeURIComponent(address)}/messages`);
-  $('messageCount').textContent = `${messages.length} messages`;
+  $('messageCount').textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''}`;
 
   if (!messages.length) {
-    $('messageList').innerHTML =
-      '<div class="empty-state"><div class="icon">✉️</div><div class="title">Inbox empty</div><div class="sub">Emails sent to this address will appear here.</div></div>';
+    $('messageList').innerHTML = `<div class="empty-state"><div class="empty-icon">${ICON.mail}</div><div class="title">Inbox Empty</div><div class="sub">Emails sent here will appear automatically.</div></div>`;
     return;
   }
 
   $('messageList').innerHTML = messages
     .map((msg) => {
       const otpHtml = msg.otp_code
-        ? `<span class="otp-badge" onclick="navigator.clipboard.writeText('${msg.otp_code}'); showToast('OTP copied: ${msg.otp_code}');">🔐 ${msg.otp_code}</span>`
+        ? `<div class="message-badges"><span class="otp-chip" data-otp="${msg.otp_code}">${ICON.shield}<span>${msg.otp_code}</span></span></div>`
         : '';
-      const unreadDot = msg.is_read ? '' : '<span class="unread-dot">●</span>';
       const attachments = JSON.parse(msg.attachments || '[]');
       const attHtml =
         attachments.length > 0
-          ? `<span class="att-badge">📎 ${attachments.length} attachment(s)</span>`
-          : '';
+          ? `${otpHtml ? '' : '<div class="message-badges">'}${otpHtml ? '' : `<span class="att-badge">${ICON.paperclip}${attachments.length} attachment${attachments.length > 1 ? 's' : ''}</span>`}${otpHtml ? '' : '</div>'}`
+          : otpHtml;
       const bodyPreview = (msg.body_text || '').slice(0, 120);
 
       return `
       <div class="message-item ${msg.is_read ? '' : 'unread'}" data-msg-id="${msg.id}">
         <div class="message-top">
-          <div class="message-from">${unreadDot} ${msg.from_name || msg.from_address}</div>
+          <div class="message-from">${escapeHtml(msg.from_name || msg.from_address)}</div>
           <div class="message-time">${formatDate(msg.received_at)}</div>
         </div>
         <div class="message-subject">${escapeHtml(msg.subject)}</div>
-        ${otpHtml}
         ${attHtml}
         <div class="message-preview">${escapeHtml(bodyPreview)}${bodyPreview.length >= 120 ? '...' : ''}</div>
       </div>`;
     })
     .join('');
 
-  // Click to open
+  // OTP chip click
+  document.querySelectorAll('.otp-chip').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const otp = el.dataset.otp;
+      navigator.clipboard.writeText(otp);
+      showToast(`OTP copied: ${otp}`);
+    });
+  });
+
+  // Message click
   document.querySelectorAll('.message-item').forEach((el) => {
     el.addEventListener('click', () => openMessage(el.dataset.msgId));
   });
@@ -139,17 +150,14 @@ async function loadMessages() {
 
 async function openMessage(msgId) {
   const address = $('inboxSelect').value;
-  const msg = await fetchJson(
-    `/api/inboxes/${encodeURIComponent(address)}/messages/${msgId}`
-  );
+  const msg = await fetchJson(`/api/inboxes/${encodeURIComponent(address)}/messages/${msgId}`);
 
   $('modalSubject').textContent = msg.subject;
   $('modalFrom').textContent = msg.from_name ? `${msg.from_name} <${msg.from_address}>` : msg.from_address;
   $('modalDate').textContent = formatDate(msg.received_at);
 
-  // OTP badge
   if (msg.otp_code) {
-    $('modalOtpBadge').textContent = `🔐 OTP: ${msg.otp_code}`;
+    $('modalOtpText').textContent = `OTP: ${msg.otp_code}`;
     $('modalOtpBadge').classList.remove('hidden');
     $('modalOtpBadge').onclick = () => {
       navigator.clipboard.writeText(msg.otp_code);
@@ -159,25 +167,20 @@ async function openMessage(msgId) {
     $('modalOtpBadge').classList.add('hidden');
   }
 
-  // Attachments
   const attachments = JSON.parse(msg.attachments || '[]');
   if (attachments.length > 0) {
     $('modalAttachments').innerHTML =
-      '<b>Attachments:</b><br>' +
-      attachments.map((a) => `📎 ${a.filename} (${formatSize(a.size)})`).join('<br>');
+      `<div style="font-weight:600;margin-bottom:6px;">Attachments</div>` +
+      attachments.map((a) => `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${ICON.paperclip}${escapeHtml(a.filename)} <span style="color:var(--label-tertiary)">(${formatSize(a.size)})</span></div>`).join('');
     $('modalAttachments').classList.remove('hidden');
   } else {
     $('modalAttachments').classList.add('hidden');
   }
 
-  // Body — prefer HTML, fallback to text
-  const frame = $('modalFrame');
-  const content = msg.body_html || `<pre style="white-space:pre-wrap;font-family:inherit;">${escapeHtml(msg.body_text)}</pre>`;
-  frame.srcdoc = content;
+  const content = msg.body_html || `<pre style="white-space:pre-wrap;font-family:inherit;padding:16px;">${escapeHtml(msg.body_text)}</pre>`;
+  $('modalFrame').srcdoc = content;
 
   $('messageModal').classList.remove('hidden');
-
-  // Refresh list to mark as read
   await loadMessages();
 }
 
@@ -199,7 +202,7 @@ async function bulkCreate() {
 function bulkExport() {
   const text = $('bulkResult').value;
   if (!text) {
-    showToast('No bulk addresses to export');
+    showToast('No addresses to export');
     return;
   }
   navigator.clipboard.writeText(text);
@@ -238,21 +241,17 @@ async function loadStats() {
     return;
   }
   const stats = await fetchJson('/api/stats?days=7');
-  const totalInboxes = stats.totals.inboxes;
-  const totalMessages = stats.totals.messages;
-
   let html = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-num">${totalInboxes}</div><div class="stat-label">Total Inboxes</div></div>
-      <div class="stat-card"><div class="stat-num">${totalMessages}</div><div class="stat-label">Total Emails</div></div>
+      <div class="stat-card"><div class="stat-num">${stats.totals.inboxes}</div><div class="stat-label">Total Inboxes</div></div>
+      <div class="stat-card"><div class="stat-num">${stats.totals.messages}</div><div class="stat-label">Total Emails</div></div>
     </div>
-    <table class="stats-table"><tr><th>Date</th><th>New Emails</th><th>New Inboxes</th></tr>`;
+    <table class="stats-table"><tr><th>Date</th><th>Emails</th><th>Inboxes</th></tr>`;
 
   stats.daily.forEach((d) => {
     html += `<tr><td>${d.date}</td><td>${d.total_emails}</td><td>${d.total_inboxes}</td></tr>`;
   });
   html += '</table>';
-
   $('statsContent').innerHTML = html;
 }
 
@@ -278,20 +277,19 @@ function escapeHtml(str) {
 
 function formatDate(dt) {
   const d = new Date(dt.includes('T') ? dt : dt.replace(' ', 'T'));
-  return d.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
 // ---- Theme ----
 
 function applyTheme(theme) {
   document.body.classList.toggle('light', theme === 'light');
-  $('themeToggle').textContent = theme === 'light' ? '☀️' : '🌙';
   localStorage.setItem('xmail_theme', theme);
 }
 
@@ -300,26 +298,33 @@ function applyTheme(theme) {
 $('copyBtn').addEventListener('click', async () => {
   if (!$('inboxSelect').value) return;
   await navigator.clipboard.writeText($('inboxSelect').value);
-  showToast('📋 Copied to clipboard');
+  showToast('Address copied');
 });
 
 $('refreshBtn').addEventListener('click', loadMessages);
+
 $('newBtn').addEventListener('click', () => {
-  $('newBox').classList.toggle('hidden');
-  $('bulkBox').classList.add('hidden');
+  toggleExpandable('newBox');
 });
 $('bulkBtn').addEventListener('click', () => {
-  $('bulkBox').classList.toggle('hidden');
-  $('newBox').classList.add('hidden');
+  toggleExpandable('bulkBox');
 });
 $('settingsBtn').addEventListener('click', async () => {
-  $('settingsBox').classList.toggle('hidden');
-  if (!$('settingsBox').classList.contains('hidden')) await loadSettings();
+  if (toggleExpandable('settingsBox')) await loadSettings();
 });
 $('statsBtn').addEventListener('click', async () => {
-  $('statsBox').classList.toggle('hidden');
-  if (!$('statsBox').classList.contains('hidden')) await loadStats();
+  if (toggleExpandable('statsBox')) await loadStats();
 });
+
+function toggleExpandable(id) {
+  const boxes = ['newBox', 'bulkBox', 'settingsBox', 'statsBox'];
+  const target = $(id);
+  const willOpen = target.classList.contains('hidden');
+  boxes.forEach((b) => $(b).classList.add('hidden'));
+  if (willOpen) target.classList.remove('hidden');
+  return willOpen;
+}
+
 $('inboxSelect').addEventListener('change', loadMessages);
 
 $('deleteBtn').addEventListener('click', async () => {
@@ -328,6 +333,7 @@ $('deleteBtn').addEventListener('click', async () => {
   const target = $('inboxSelect').value;
   await fetchJson(`/api/inboxes/${encodeURIComponent(target)}?purge=1`, { method: 'DELETE' });
   await loadInboxes();
+  showToast('Inbox deleted');
 });
 
 $('createCustomBtn').addEventListener('click', async () => {
@@ -338,7 +344,9 @@ $('createCustomBtn').addEventListener('click', async () => {
     body: JSON.stringify({ localPart, domain }),
   });
   $('localPartInput').value = '';
+  $('newBox').classList.add('hidden');
   await loadInboxes(inbox.address);
+  showToast('Inbox created');
 });
 
 $('createRandomBtn').addEventListener('click', async () => {
@@ -347,7 +355,9 @@ $('createRandomBtn').addEventListener('click', async () => {
     method: 'POST',
     body: JSON.stringify({ domain }),
   });
+  $('newBox').classList.add('hidden');
   await loadInboxes(inbox.address);
+  showToast('Random inbox created');
 });
 
 $('bulkCreateBtn').addEventListener('click', bulkCreate);
@@ -366,12 +376,18 @@ $('messageModal').addEventListener('click', (e) => {
 
 // ---- Init ----
 
-const savedTheme = localStorage.getItem('xmail_theme') || 'dark';
-applyTheme(savedTheme);
+applyTheme(localStorage.getItem('xmail_theme') || 'dark');
+
+// Nav bar scrolled state
+window.addEventListener('scroll', () => {
+  const navBar = document.querySelector('.nav-bar');
+  if (window.scrollY > 10) navBar.classList.add('scrolled');
+  else navBar.classList.remove('scrolled');
+}, { passive: true });
 
 Promise.all([loadConfig(), ensureSession()])
   .then(() => loadInboxes())
   .catch((err) => {
     console.error(err);
-    $('messageList').innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><div class="title">Connection error</div><div class="sub">${escapeHtml(err.message)}</div></div>`;
+    $('messageList').innerHTML = `<div class="empty-state"><div class="empty-icon">${ICON.warning}</div><div class="title">Connection Error</div><div class="sub">${escapeHtml(err.message)}</div></div>`;
   });
