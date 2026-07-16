@@ -391,8 +391,10 @@ function renderReadingPane(msg) {
     html += '</div></div>';
   }
   // Body
-  const content = msg.body_html || '<pre style="white-space:pre-wrap;padding:24px;font-family:inherit;margin:0;">' + escapeHtml(msg.body_text) + '</pre>';
-  html += '<div style="margin:0 24px 24px;padding:20px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border);min-height:200px;"><iframe id="msgFrame" sandbox="allow-same-origin" style="width:100%;border:none;min-height:300px;"></iframe></div>';
+  const content = msg.body_html
+    ? '<base target="_blank"><body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;background:#fff;">' + msg.body_html + '</body>'
+    : '<body style="margin:0;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a;background:#fff;white-space:pre-wrap;">' + escapeHtml(msg.body_text) + '</body>';
+  html += '<div class="message-body"><iframe id="msgFrame" sandbox="allow-same-origin" style="width:100%;border:none;min-height:300px;border-radius:var(--radius-lg);background:#fff;"></iframe></div>';
   html += '</div></div>';
   pane.innerHTML = html;
   const frame = $('msgFrame');
@@ -594,8 +596,8 @@ async function loadAdminSettings() {
   try {
     const res = await fetch('/api/admin/settings', { headers: { 'x-api-key': adminKey } });
     if (!res.ok) throw new Error(await res.text());
-    const settings = await res.json();
-    renderAdminTabs(settings);
+    const data = await res.json();
+    renderAdminTabs(data.settings || {});
   } catch(e) {
     const c = $('adminContent');
     if (c) c.innerHTML = '<div style="text-align:center;padding:24px;color:var(--red,#ff3b30);">Error: ' + escapeHtml(e.message) + '</div><div style="text-align:center;"><button class="btn btn-secondary" onclick="adminKey=\'\';localStorage.removeItem(\'' + ADMIN_KEY_KEY + '\');closeModal();openAdminModal();">Reset Key</button></div>';
@@ -606,48 +608,107 @@ function renderAdminTabs(settings) {
   const s = settings || {};
   const c = $('adminContent');
   if (!c) return;
-  const tabStyle = 'padding:8px 16px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:var(--label-secondary);';
-  const tabActive = 'padding:8px 16px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--accent);color:var(--accent);';
-  let html = '<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;">';
-  html += '<button onclick="switchAdminTab(0)" id="atab0" style="' + tabActive + '">General</button>';
-  html += '<button onclick="switchAdminTab(1)" id="atab1" style="' + tabStyle + '">Security</button>';
-  html += '<button onclick="switchAdminTab(2)" id="atab2" style="' + tabStyle + '">' + ICON.telegram + ' Telegram</button>';
-  html += '<button onclick="switchAdminTab(3)" id="atab3" style="' + tabStyle + '">Webhooks</button>';
+  let html = '<div class="admin-tabs">';
+  html += '<button class="admin-tab active" onclick="switchAdminTab(0)" id="atab0">General</button>';
+  html += '<button class="admin-tab" onclick="switchAdminTab(1)" id="atab1">Security</button>';
+  html += '<button class="admin-tab" onclick="switchAdminTab(2)" id="atab2">Telegram</button>';
+  html += '<button class="admin-tab" onclick="switchAdminTab(3)" id="atab3">Webhooks</button>';
+  html += '<button class="admin-tab" onclick="switchAdminTab(4)" id="atab4">Password</button>';
   html += '</div>';
+
   // General
-  html += '<div id="apanel0"><div class="form-group"><label>App Name</label><input id="adm_app_name" value="' + escapeAttr(s.app_name || '') + '"></div>';
-  html += '<div class="form-group"><label>Auto Expiry (hours)</label><input id="adm_auto_expiry_hours" type="number" value="' + escapeAttr(String(s.auto_expiry_hours || '')) + '"></div>';
-  html += '<div class="form-group"><label>Max Messages Per Inbox</label><input id="adm_max_messages_per_inbox" type="number" value="' + escapeAttr(String(s.max_messages_per_inbox || '')) + '"></div></div>';
+  html += '<div class="admin-section active" id="apanel0">';
+  html += '<div class="admin-field"><label>App Name</label><input id="adm_app_name" value="' + escapeAttr(s.app_name || '') + '"></div>';
+  html += '<div class="admin-field"><label>Auto Expiry (hours)</label><input id="adm_auto_expiry_hours" type="number" value="' + escapeAttr(String(s.auto_expiry_hours || '')) + '"><div class="hint">0 = never expire. Default: 24</div></div>';
+  html += '<div class="admin-field"><label>Max Messages Per Inbox</label><input id="adm_max_messages_per_inbox" type="number" value="' + escapeAttr(String(s.max_messages_per_inbox || '')) + '"><div class="hint">0 = unlimited. Default: 100</div></div>';
+  html += '</div>';
+
   // Security
-  html += '<div id="apanel1" style="display:none;"><div class="form-group"><label>API Keys (comma-separated)</label><textarea id="adm_api_keys" rows="3" style="font-family:monospace;font-size:12px;" placeholder="key1, key2">' + escapeHtml(Array.isArray(s.api_keys) ? s.api_keys.join(', ') : (s.api_keys || '')) + '</textarea></div>';
-  html += '<div class="form-group"><label>Admin Keys (comma-separated)</label><textarea id="adm_admin_keys" rows="3" style="font-family:monospace;font-size:12px;" placeholder="key1, key2">' + escapeHtml(Array.isArray(s.admin_keys) ? s.admin_keys.join(', ') : (s.admin_keys || '')) + '</textarea></div></div>';
+  html += '<div class="admin-section" id="apanel1">';
+  html += '<div class="admin-field"><label>API Keys</label><textarea id="adm_api_keys" rows="3" placeholder="key1, key2, key3"></textarea><div class="hint">Comma-separated. When set, API endpoints require this key. Empty = auth disabled.</div></div>';
+  html += '<div class="admin-field"><label>Admin Keys</label><textarea id="adm_admin_keys" rows="3" placeholder="admin-key-1, admin-key-2"></textarea><div class="hint">Comma-separated. Required for admin panel + domain/blocklist management.</div></div>';
+  html += '</div>';
+
   // Telegram
-  html += '<div id="apanel2" style="display:none;"><div class="form-group"><label>Telegram Bot Token</label><input id="adm_tg_bot_token" value="' + escapeAttr(s.tg_bot_token || '') + '" placeholder="123456:ABC-DEF..."></div>';
-  html += '<button class="btn btn-secondary" onclick="setupTgWebhook()" style="margin-top:4px;">' + ICON.telegram + ' Setup Webhook</button>';
-  html += '<p style="font-size:12px;color:var(--label-tertiary);margin-top:8px;">Sets the Telegram webhook to receive incoming messages on this worker.</p></div>';
+  const tgStatus = s.tg_bot_token ? '<span class="admin-status ok">Configured</span>' : '<span class="admin-status off">Not Set</span>';
+  html += '<div class="admin-section" id="apanel2">';
+  html += '<div class="admin-field"><label>Telegram Bot Token</label><input id="adm_tg_bot_token" value="' + escapeAttr(s.tg_bot_token || '') + '" placeholder="123456:ABC-DEF..."></div>';
+  html += '<div style="margin-bottom:12px;">Status: ' + tgStatus + '</div>';
+  html += '<button class="btn btn-secondary" onclick="setupTgWebhook()">' + ICON.telegram + ' Setup Webhook</button>';
+  html += '<div class="hint" style="margin-top:8px;">Click to register webhook with Telegram. Bot will respond to /inbox, /otp, /domains, /create, /stats commands.</div>';
+  html += '</div>';
+
   // Webhooks
-  html += '<div id="apanel3" style="display:none;"><div class="form-group"><label>Webhook Secret</label><input id="adm_webhook_secret" value="' + escapeAttr(s.webhook_secret || '') + '" placeholder="Secret for webhook verification"></div></div>';
-  // Save
-  html += '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);"><button class="btn btn-primary" onclick="saveAdminSettings()">' + ICON.save + ' Save Settings</button></div>';
+  const whStatus = s.webhook_secret ? '<span class="admin-status ok">Enabled</span>' : '<span class="admin-status off">Disabled</span>';
+  html += '<div class="admin-section" id="apanel3">';
+  html += '<div class="admin-field"><label>Webhook Secret (HMAC)</label><input id="adm_webhook_secret" value="' + escapeAttr(s.webhook_secret || '') + '" placeholder="secret-key-for-signing"></div>';
+  html += '<div style="margin-bottom:12px;">Signing: ' + whStatus + '</div>';
+  html += '<div class="hint">When set, all outgoing webhooks include X-XMail-Signature: sha256=... header. Receiver verifies with HMAC-SHA256.</div>';
+  html += '</div>';
+
+  // Password
+  html += '<div class="admin-section" id="apanel4">';
+  html += '<div class="admin-field"><label>Current Admin Key</label><input id="adm_old_key" type="password" placeholder="Enter current admin key"></div>';
+  html += '<div class="admin-field"><label>New Admin Key</label><input id="adm_new_key" type="password" placeholder="Enter new admin key"></div>';
+  html += '<div class="admin-field"><label>Confirm New Key</label><input id="adm_confirm_key" type="password" placeholder="Re-enter new admin key"></div>';
+  html += '<button class="btn btn-primary" onclick="changeAdminPassword()">' + ICON.save + ' Change Password</button>';
+  html += '<div class="hint" style="margin-top:8px;">Changing password updates the admin key. You will need to re-enter the new key next time you open Admin Panel.</div>';
+  html += '</div>';
+
+  // Save (all tabs except password)
+  html += '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);"><button class="btn btn-primary" onclick="saveAdminSettings()">' + ICON.save + ' Save Settings</button></div>';
   c.innerHTML = html;
 }
 
 function switchAdminTab(idx) {
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const p = $('apanel' + i);
     const t = $('atab' + i);
-    if (p) p.style.display = i === idx ? '' : 'none';
-    if (t) { t.style.borderBottom = i === idx ? '2px solid var(--accent)' : '2px solid transparent'; t.style.color = i === idx ? 'var(--accent)' : 'var(--label-secondary)'; }
+    if (p) { p.classList.toggle('active', i === idx); }
+    if (t) { t.classList.toggle('active', i === idx); }
   }
+}
+
+async function changeAdminPassword() {
+  const oldKey = $('adm_old_key') ? $('adm_old_key').value.trim() : '';
+  const newKey = $('adm_new_key') ? $('adm_new_key').value.trim() : '';
+  const confirmKey = $('adm_confirm_key') ? $('adm_confirm_key').value.trim() : '';
+  if (!oldKey || !newKey) { showToast('Fill all fields'); return; }
+  if (newKey !== confirmKey) { showToast('New keys do not match'); return; }
+  if (newKey.length < 6) { showToast('Key too short (min 6 chars)'); return; }
+  // Verify old key matches current
+  if (oldKey !== adminKey) { showToast('Current key is incorrect'); return; }
+  // Get current admin_keys from DB, replace old with new
+  try {
+    const res = await fetch('/api/admin/settings', { headers: { 'x-api-key': adminKey } });
+    if (!res.ok) throw new Error('Failed to fetch settings');
+    const data = await res.json();
+    let keys = (data.settings.admin_keys || '').split(',').map(function(k) { return k.trim(); }).filter(Boolean);
+    // Replace old key with new
+    const idx = keys.indexOf(oldKey);
+    if (idx >= 0) { keys[idx] = newKey; } else { keys.push(newKey); }
+    // Save
+    const putRes = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': adminKey },
+      body: JSON.stringify({ admin_keys: keys.join(',') })
+    });
+    if (!putRes.ok) throw new Error('Failed to save');
+    // Update local
+    adminKey = newKey;
+    localStorage.setItem(ADMIN_KEY_KEY, newKey);
+    showToast('Password changed successfully');
+    closeModal();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function saveAdminSettings() {
   const payload = {
     app_name: $('adm_app_name') ? $('adm_app_name').value.trim() : '',
-    auto_expiry_hours: $('adm_auto_expiry_hours') ? parseInt($('adm_auto_expiry_hours').value) || 0 : 0,
-    max_messages_per_inbox: $('adm_max_messages_per_inbox') ? parseInt($('adm_max_messages_per_inbox').value) || 0 : 0,
-    api_keys: $('adm_api_keys') ? $('adm_api_keys').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
-    admin_keys: $('adm_admin_keys') ? $('adm_admin_keys').value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [],
+    auto_expiry_hours: $('adm_auto_expiry_hours') ? $('adm_auto_expiry_hours').value.trim() : '',
+    max_messages_per_inbox: $('adm_max_messages_per_inbox') ? $('adm_max_messages_per_inbox').value.trim() : '',
+    api_keys: $('adm_api_keys') ? $('adm_api_keys').value.trim() : '',
+    admin_keys: $('adm_admin_keys') ? $('adm_admin_keys').value.trim() : '',
     tg_bot_token: $('adm_tg_bot_token') ? $('adm_tg_bot_token').value.trim() : '',
     webhook_secret: $('adm_webhook_secret') ? $('adm_webhook_secret').value.trim() : ''
   };
@@ -742,6 +803,7 @@ window.setAdminKey = setAdminKey;
 window.switchAdminTab = switchAdminTab;
 window.saveAdminSettings = saveAdminSettings;
 window.setupTgWebhook = setupTgWebhook;
+window.changeAdminPassword = changeAdminPassword;
 
 // ==================== Keyboard Shortcuts (#6) ====================
 document.addEventListener('keydown', function(e) {
