@@ -505,4 +505,94 @@ api.get('/inboxes/:address/qr', async (c) => {
   return new Response(svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600' } });
 });
 
+// ==================== RSS Feed (#7) ====================
+// GET /inboxes/:address/rss — RSS 2.0 feed of inbox messages
+api.get('/inboxes/:address/rss', async (c) => {
+  const address = decodeURIComponent(c.req.param('address'));
+  const apiKey = (c.req.header('x-api-key') || c.req.query('key') || '').trim();
+  const keys = getApiKeys(c.env);
+  if (keys.length > 0 && !keys.includes(apiKey)) {
+    return jsonError(c, 401, 'API key required for RSS');
+  }
+  const messages = await getMessages(c.env.DB, address, 50);
+  const pubDate = messages.length > 0 ? new Date(messages[0].received_at.replace(' ', 'T')).toUTCString() : new Date().toUTCString();
+
+  let items = '';
+  for (const msg of messages) {
+    const dt = new Date(msg.received_at.replace(' ', 'T')).toUTCString();
+    const desc = msg.otp_code
+      ? `OTP: ${msg.otp_code}\n\n${msg.body_text.slice(0, 500)}`
+      : msg.body_text.slice(0, 500);
+    items += `<item><title><![CDATA[${msg.subject}]]></title><link>https://${c.env.WEB_HOST}/#msg=${msg.id}</link><description><![CDATA[${desc}]]></description><author>${msg.from_address}</author><pubDate>${dt}</pubDate><guid isPermaLink="false">${msg.id}</guid></item>`;
+  }
+
+  const rss = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>XMail — ${address}</title>
+<link>https://${c.env.WEB_HOST}</link>
+<description>Disposable inbox feed for ${address}</description>
+<language>en</language>
+<pubDate>${pubDate}</pubDate>
+${items}
+</channel></rss>`;
+
+  return new Response(rss, { headers: { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Cache-Control': 'public, max-age=60' } });
+});
+
+// ==================== Inbox Reclaim (#8) ====================
+// POST /inboxes/claim — reclaim existing inbox by address into current session
+api.post('/inboxes/claim', async (c) => {
+  const sid = requireSession(c);
+  if (!sid) return jsonError(c, 400, 'Missing x-session-id');
+  const body = await c.req.json().catch(() => ({}));
+  const address = (body.address || '').trim().toLowerCase();
+  if (!address) return jsonError(c, 400, 'Address required');
+  const inbox = await getInbox(c.env.DB, address);
+  if (!inbox) return jsonError(c, 404, 'Inbox not found');
+  await linkInboxToSession(c.env.DB, sid, address);
+  return c.json({ ok: true, inbox });
+});
+
+// ==================== Message .eml Download (#9) ====================
+// GET /inboxes/:address/messages/:id/eml — download message as .eml
+api.get('/inboxes/:address/messages/:id/eml', async (c) => {
+  const sid = requireSession(c);
+  if (!sid) return jsonError(c, 400, 'Missing x-session-id');
+  const address = decodeURIComponent(c.req.param('address'));
+  if (!(await isInboxInSession(c.env.DB, sid, address))) return jsonError(c, 403, 'Inbox not in session');
+  const msg = await getMessage(c.env.DB, c.req.param('id'));
+  if (!msg || msg.inbox_address !== address) return jsonError(c, 404, 'Message not found');
+
+  const date = new Date(msg.received_at.replace(' ', 'T')).toUTCString();
+  const eml = [
+    `From: ${msg.from_name ? `"${msg.from_name}" ` : ''}<${msg.from_address}>`,
+    `To: <${msg.inbox_address}>`,
+    `Subject: ${msg.subject}`,
+    `Date: ${date}`,
+    `Message-ID: <${msg.id}@${c.env.WEB_HOST}>`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/plain; charset=utf-8`,
+    ``,
+    msg.body_text,
+  ].join('\r\n');
+
+  return new Response(eml, {
+    headers: {
+      'Content-Type': 'message/rfc822',
+      'Content-Disposition': `attachment; filename="${msg.id}.eml"`,
+    },
+  });
+});
+
+// ==================== Webhook HMAC Signing (#10) ====================
+// Webhook helper — signs payload with HMAC-SHA256 using WEBHOOK_SECRET
+async function signWebhook(payload: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export { signWebhook };
+
 export default api;

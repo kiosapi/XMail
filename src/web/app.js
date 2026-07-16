@@ -259,6 +259,7 @@ function render() {
   html += '<div class="sidebar-section"><div class="sidebar-section-label">Actions</div>';
   html += '<div class="sidebar-item" onclick="openBulkModal()">' + ICON.bulk + '<span>Bulk Create</span></div>';
   html += '<div class="sidebar-item" onclick="exportInboxes()">' + ICON.export + '<span>Export All</span></div>';
+  html += '<div class="sidebar-item" onclick="openClaimModal()">' + ICON.inbox + '<span>Reclaim Inbox</span></div>';
   html += '<div class="sidebar-item" onclick="openDomainsModal()">' + ICON.globe + '<span>Domains</span></div>';
   html += '<div class="sidebar-item" onclick="openBlocklistModal()">' + ICON.shieldOff + '<span>Blocklist</span></div>';
   html += '</div>';
@@ -347,6 +348,7 @@ function renderReadingPane(msg) {
   html += '<button class="topbar-menu-btn" onclick="closeReadingPaneMobile()" style="display:flex;">' + ICON.back + '</button>';
   html += '<div style="flex:1;"></div>';
   html += '<button class="topbar-btn" onclick="toggleStar(\'' + msg.id + '\')" title="Star">' + (msg.is_starred ? ICON.starFilled : ICON.star) + '</button>';
+  html += '<button class="topbar-btn" onclick="downloadEml(\'' + msg.id + '\')" title="Download .eml">' + ICON.export + '</button>';
   html += '<button class="topbar-btn" onclick="deleteMessage(\'' + msg.id + '\')" title="Delete" style="color:var(--red);">' + ICON.delete + '</button>';
   html += '</div>';
   html += '<div class="message-detail-subject">' + escapeHtml(msg.subject) + '</div>';
@@ -594,6 +596,85 @@ window.openSidebar = openSidebar;
 window.closeSidebar = closeSidebar;
 window.closeReadingPaneMobile = closeReadingPaneMobile;
 window.loadMessages = loadMessages;
+window.openClaimModal = openClaimModal;
+window.downloadEml = downloadEml;
+
+// ==================== Keyboard Shortcuts (#6) ====================
+document.addEventListener('keydown', function(e) {
+  // Skip if typing in input/textarea or modal open
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (document.getElementById('modalOverlay')) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  switch (e.key.toLowerCase()) {
+    case 'j': // Next message
+      e.preventDefault(); navigateMessage(1); break;
+    case 'k': // Previous message
+      e.preventDefault(); navigateMessage(-1); break;
+    case 's': // Star current message
+      if (selectedMessage) { e.preventDefault(); toggleStar(selectedMessage); } break;
+    case 'd': // Delete current message
+      if (selectedMessage) { e.preventDefault(); deleteMessage(selectedMessage); } break;
+    case 'c': // Compose new inbox
+      e.preventDefault(); openNewModal(); break;
+    case '/': // Focus search
+      e.preventDefault(); const si = document.getElementById('searchInput'); if (si) si.focus(); break;
+    case 'escape': // Close reading pane on mobile
+      closeReadingPaneMobile(); break;
+  }
+});
+
+function navigateMessage(dir) {
+  if (!selectedInbox || messages.length === 0) return;
+  const idx = messages.findIndex(function(m) { return m.id === selectedMessage; });
+  if (idx === -1) { if (dir > 0 && messages[0]) openMessage(messages[0].id); return; }
+  const next = idx + dir;
+  if (next >= 0 && next < messages.length) openMessage(messages[next].id);
+}
+
+// ==================== Inbox Reclaim (#8) ====================
+function openClaimModal() {
+  showModal(
+    '<div class="modal-header"><div class="modal-title">Reclaim Inbox</div><button class="modal-close" onclick="closeModal()">' + ICON.close + '</button></div>',
+    '<div class="form-group"><label>Inbox Address</label><input id="claimAddress" placeholder="test@kilo.web.id"></div><p style="font-size:12px;color:var(--label-tertiary);">Recover an existing inbox into this session. Useful if session was lost.</p>',
+    '<button class="btn btn-primary" onclick="claimInbox()">' + ICON.inbox + ' Reclaim</button>'
+  );
+}
+
+async function claimInbox() {
+  const addr = $('claimAddress').value.trim().toLowerCase();
+  if (!addr) { showToast('Address required'); return; }
+  try {
+    const res = await fetchJson('/api/inboxes/claim', { method: 'POST', body: JSON.stringify({ address: addr }) });
+    closeModal();
+    showToast('Inbox reclaimed: ' + addr);
+    await loadInboxes();
+    selectedInbox = addr;
+    render();
+    await loadMessages();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+// ==================== .eml Download (#9) ====================
+async function downloadEml(msgId) {
+  if (!selectedInbox || !msgId) return;
+  try {
+    const res = await fetch('/api/inboxes/' + encodeURIComponent(selectedInbox) + '/messages/' + msgId + '/eml', {
+      headers: { 'x-session-id': sessionId }
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = msgId + '.eml';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Downloaded .eml');
+  } catch(e) { showToast('Error: ' + e.message); }
+}
 
 init().catch(function(err) {
   console.error(err);

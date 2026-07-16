@@ -35,6 +35,7 @@ MAX_MESSAGES_PER_INBOX = "100"
 # API_KEYS  — comma-separated, empty = auth disabled
 # ADMIN_KEYS — comma-separated, for domain management
 # TG_BOT_TOKEN — Telegram bot token
+# WEBHOOK_SECRET — HMAC signing key for webhooks (optional)
 
 # ---- Static assets ----
 [assets]

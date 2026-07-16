@@ -11,6 +11,7 @@ export interface EmailHandlerEnv {
   MAIL_DOMAIN: string;
   AUTO_EXPIRY_HOURS: string;
   MAX_MESSAGES_PER_INBOX: string;
+  WEBHOOK_SECRET: string;
 }
 
 interface AttachmentInfo {
@@ -73,17 +74,20 @@ export async function handleEmail(message: ForwardableEmailMessage, env: EmailHa
 
     const settings = await getInboxSettings(db, to);
     if (settings) {
-      // Webhook
+      // Webhook (with HMAC signing if WEBHOOK_SECRET set)
       if (settings.webhook_url) {
         try {
-          await fetch(settings.webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event: 'email.received', inbox: to,
-              message: { id: msgId, from, from_name: fromName, subject, otp_code: otpCode, received_at: new Date().toISOString() },
-            }),
+          const payload = JSON.stringify({
+            event: 'email.received', inbox: to,
+            message: { id: msgId, from, from_name: fromName, subject, otp_code: otpCode, received_at: new Date().toISOString() },
           });
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          const whSecret = (env as any).WEBHOOK_SECRET;
+          if (whSecret) {
+            const sig = await hmacSha256(payload, whSecret);
+            headers['X-XMail-Signature'] = `sha256=${sig}`;
+          }
+          await fetch(settings.webhook_url, { method: 'POST', headers, body: payload });
           await markForwarded(db, msgId);
         } catch (err) { console.error(`[xmail] Webhook failed for ${to}:`, err); }
       }
@@ -127,4 +131,12 @@ async function sendTelegramNotification(chatId: string, inbox: string, msg: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
   });
+}
+
+// ---- HMAC-SHA256 helper (#10 webhook signing) ----
+async function hmacSha256(payload: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
